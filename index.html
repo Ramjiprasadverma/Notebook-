@@ -1,0 +1,3383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Notebook — a notebook for your stylus</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  :root{
+    --paper: #f6f3ec;
+    --paper-line: #d8d2c2;
+    --ink: #1c2430;
+    --ink-soft: #3a4354;
+    --cover: #26314a;
+    --cover-accent: #c9762f;
+    --accent: #6b7fd7;
+    --danger: #b4483a;
+    --panel: #fbfaf6;
+    --shadow: rgba(20, 24, 34, 0.18);
+    --folder-tan: #e2c48f;
+    --folder-tan-dark: #c9a468;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin:0; padding:0; height:100%; overflow:hidden;
+    font-family: "Iowan Old Style","Georgia", serif;
+    background: var(--cover);
+    color: var(--ink);
+  }
+  button { font-family: inherit; }
+  #app { display:flex; height:100%; width:100%; }
+
+  /* ---- Tab rail (Home / Recently Deleted) ---- */
+  #tabRail {
+    width: 64px;
+    background: linear-gradient(180deg, var(--cover), #1b2439);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding: 14px 0;
+    gap: 14px;
+    flex-shrink:0;
+    z-index: 5;
+    box-shadow: 2px 0 10px var(--shadow);
+  }
+  #tabRail .brand {
+    color: var(--cover-accent);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    writing-mode: vertical-rl;
+    text-transform: uppercase;
+    opacity: 0.85;
+    font-family: "Times New Roman", serif;
+    margin-bottom: 6px;
+  }
+  .tabBtn {
+    width: 44px; height: 44px;
+    border-radius: 10px;
+    border: none;
+    background: transparent;
+    color: rgba(255,255,255,0.55);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .tabBtn svg { width: 22px; height: 22px; }
+  .tabBtn:hover { color: rgba(255,255,255,0.85); background: rgba(255,255,255,0.06); }
+  .tabBtn.active { color: var(--cover-accent); background: rgba(201,118,47,0.14); }
+  .tabSpacer { flex: 1; }
+  .tabLabel {
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.4);
+    text-align:center;
+  }
+
+  /* ---- Content area ---- */
+  #content { flex:1; position:relative; overflow:hidden; background: var(--paper); }
+  #browserView, #editorView { position:absolute; inset:0; display:flex; flex-direction:column; }
+  .hidden { display:none !important; }
+
+  #breadcrumb {
+    display:flex; align-items:center; gap:6px;
+    padding: 16px 24px 4px;
+    font-size: 13px;
+    color: #8a8474;
+    flex-shrink:0;
+  }
+  #breadcrumb .crumb { cursor:pointer; }
+  #breadcrumb .crumb:hover { color: var(--ink); text-decoration: underline; }
+  #breadcrumb .crumb.current { color: var(--ink); font-weight:600; cursor:default; text-decoration:none; }
+  #breadcrumb .sep { opacity: 0.5; }
+
+  #browserHeader {
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 4px 24px 14px;
+    flex-shrink:0;
+  }
+  #browserHeader h1 { font-size: 22px; margin:0; font-weight:700; }
+  #browserHeader p { margin: 2px 0 0; font-size: 12px; color: #8a8474; }
+
+  #grid {
+    flex:1;
+    overflow-y:auto;
+    padding: 4px 24px 32px;
+    display:grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 16px;
+    align-content:start;
+  }
+
+  /* Folder card: literal manila-folder shape with a tab */
+  .folderCard {
+    position:relative;
+    cursor:pointer;
+    padding-top: 14px;
+  }
+  .folderCard .tabShape {
+    width: 46%;
+    height: 14px;
+    background: var(--folder-tan-dark);
+    border-radius: 6px 6px 0 0;
+    margin-left: 10px;
+  }
+  .folderCard .body {
+    background: var(--folder-tan);
+    border-radius: 4px 10px 10px 10px;
+    padding: 16px 14px;
+    min-height: 84px;
+    display:flex; flex-direction:column; justify-content:flex-end;
+    box-shadow: 0 4px 10px var(--shadow);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .folderCard:hover .body { transform: translateY(-2px); box-shadow: 0 8px 16px var(--shadow); }
+  .folderCard .name {
+    font-weight:700; font-size:15px; color: #4a3a1e;
+    outline:none;
+  }
+  .folderCard .count { font-size: 11px; color: #6b5a34; margin-top:2px; }
+  .cardMenuBtn {
+    position:absolute; top: -2px; right: -2px;
+    width: 26px; height:26px; border-radius:999px;
+    border:none; background: var(--panel); color:#6b6455;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; box-shadow: 0 2px 6px var(--shadow);
+  }
+  .cardMenuBtn:hover { color: var(--ink); }
+
+  /* Notebook card: cover with colored spine */
+  .notebookCard { position:relative; cursor:pointer; }
+  .notebookCard .cover {
+    background: var(--panel);
+    border-radius: 4px 8px 8px 4px;
+    min-height: 100px;
+    padding: 14px 14px 14px 18px;
+    box-shadow: 0 4px 10px var(--shadow);
+    border-left: 8px solid var(--spine, var(--accent));
+    display:flex; flex-direction:column; justify-content:flex-end;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .notebookCard:hover .cover { transform: translateY(-2px); box-shadow: 0 8px 16px var(--shadow); }
+  .notebookCard .name { font-weight:700; font-size:14px; color: var(--ink); }
+  .notebookCard .count { font-size: 11px; color: #8a8474; margin-top:2px; }
+
+  .addTile {
+    border: 2px dashed var(--paper-line);
+    border-radius: 10px;
+    min-height: 84px;
+    display:flex; align-items:center; justify-content:center;
+    flex-direction:column;
+    gap:4px;
+    cursor:pointer;
+    color: #a39c86;
+    background:transparent;
+    transition: border-color 0.15s ease, color 0.15s ease;
+  }
+  .addTile:hover { border-color: var(--accent); color: var(--accent); }
+  .addTile .plus { font-size: 24px; line-height:1; }
+  .addTile span.label { font-size: 11px; }
+
+  /* ---- Trash list ---- */
+  #trashList { flex:1; overflow-y:auto; padding: 4px 24px 32px; display:flex; flex-direction:column; gap:10px; }
+  .trashRow {
+    display:flex; align-items:center; justify-content:space-between;
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 12px 16px;
+    box-shadow: 0 2px 8px var(--shadow);
+  }
+  .trashRow .info { display:flex; flex-direction:column; }
+  .trashRow .info .n { font-weight:600; font-size:14px; }
+  .trashRow .info .m { font-size: 11px; color:#8a8474; }
+  .trashRow .actions { display:flex; gap:8px; }
+  .trashBtn {
+    border:none; border-radius:6px; padding:6px 12px; font-size:12px; cursor:pointer;
+    font-family: inherit;
+  }
+  .trashBtn.restore { background: var(--accent); color:white; }
+  .trashBtn.forever { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+  #emptyState { padding: 40px 24px; text-align:center; color:#a39c86; font-size:13px; }
+
+  /* ---- Editor (notebook open) — full-screen, single top toolbar ---- */
+  #editorView { background: var(--paper); }
+  #editorTopbar {
+    display:flex; align-items:center; gap:2px;
+    padding: 6px 10px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--paper-line);
+    flex-shrink:0;
+    overflow-x:auto;
+    scrollbar-width: none;
+  }
+  #editorTopbar::-webkit-scrollbar { display:none; }
+  #toolOptionsRow {
+    display:flex; align-items:center; justify-content:center; gap:10px;
+    padding: 8px 14px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--paper-line);
+    flex-shrink:0;
+    overflow-x:auto;
+    scrollbar-width: none;
+  }
+  #toolOptionsRow.hidden { display:none; }
+  #toolOptionsRow::-webkit-scrollbar { display:none; }
+  #arrowToggle svg { transition: transform 0.15s ease; }
+  #arrowToggle.open svg { transform: rotate(180deg); }
+  .ebtn {
+    width:38px; height:38px; border-radius:8px; border:none; background:transparent;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    color: var(--ink-soft); transition: background 0.15s ease, color 0.15s ease;
+    flex-shrink:0; position:relative;
+  }
+  .ebtn:hover { background: rgba(107,127,215,0.12); }
+  .ebtn.active { background: var(--accent); color:white; }
+  .ebtn svg { width:19px; height:19px; }
+  .ebtn:disabled { opacity: 0.35; cursor:default; }
+  .ebtn:disabled:hover { background:transparent; }
+  .ediv { width:1px; height:24px; background: var(--paper-line); margin:0 5px; flex-shrink:0; }
+  .swatch { width:24px; height:24px; border-radius:999px; border:2px solid transparent; cursor:pointer; flex-shrink:0; }
+  .swatchCustom { border-color: #d8d3c4; }
+  .swatchCustom.active { border-color: var(--ink); transform: scale(1.08); }
+  #toolOptionsRow .optLabel { font-size:11px; color:#8a8474; flex-shrink:0; }
+  #toolOptionsRow .emptyNote { font-size:12px; color:#a39c86; padding:2px 0; }
+  #clearPageBtn {
+    flex-shrink:0; border:none; background:transparent; color:#b4483a; cursor:pointer;
+    width:38px; height:38px; border-radius:8px; display:flex; align-items:center; justify-content:center;
+  }
+  #clearPageBtn:hover { background: rgba(180,72,58,0.08); }
+  .eraserSizeCircle {
+    display:flex; align-items:center; justify-content:center; flex-shrink:0; cursor:pointer;
+    width:40px; height:40px; border-radius:50%; border:2px solid transparent;
+  }
+  .eraserSizeCircle.active { border-color: var(--accent); }
+  .eraserSizeCircle .swatchDot {
+    border-radius:50%; border:1px solid #c9c2ae;
+    background-image: repeating-conic-gradient(#d8d3c4 0% 25%, #efece2 0% 50%);
+    background-size: 8px 8px;
+  }
+  .swatch.active { border-color: var(--ink); transform: scale(1.08); }
+  #widthSlider { width:64px; accent-color: var(--accent); flex-shrink:0; }
+  #pageTitle {
+    font-size: 14px; font-weight:600; color: var(--ink);
+    background:transparent; border:none; outline:none; font-family:inherit;
+    width: 140px; flex-shrink:0; margin-left: 4px;
+  }
+  #topSpacer { flex:1; min-width: 8px; }
+
+  /* Popovers (Recent notebooks / More menu) */
+  .popover {
+    position:fixed; background: var(--panel);
+    border-radius: 12px; box-shadow: 0 10px 28px var(--shadow); border:1px solid var(--paper-line);
+    z-index: 50; min-width: 220px; max-height: 70vh; overflow-y:auto;
+  }
+  .popover.hidden { display:none; }
+  .popover .pRow {
+    display:flex; align-items:center; gap:10px; padding: 10px 14px; cursor:pointer;
+    font-size:13px; color: var(--ink);
+  }
+  .popover .pRow:hover { background: rgba(107,127,215,0.08); }
+  .popover .pRow .sub { color:#8a8474; font-size:11px; }
+  .popover .pHeader { padding: 12px 14px 6px; font-size:11px; color:#a39c86; text-transform:uppercase; letter-spacing:0.05em; }
+  .popover .pDivider { height:1px; background: var(--paper-line); margin: 4px 0; }
+  #morePanel { min-width: 280px; max-width: 300px; }
+  #morePanel .moreHeader { display:flex; gap:12px; padding: 14px; }
+  #morePanel .moreThumb {
+    width: 52px; height: 68px; border-radius:4px; background: var(--panel);
+    box-shadow: 0 2px 8px var(--shadow); object-fit: cover; flex-shrink:0;
+    border: 1px solid var(--paper-line);
+  }
+  #morePanel .moreInfo .n { font-weight:700; font-size:14px; color: var(--ink); }
+  #morePanel .moreInfo .m { font-size:10.5px; color:#8a8474; margin-top:2px; line-height:1.5; }
+  #morePanel .tileRow { display:flex; gap:8px; padding: 4px 14px 12px; overflow-x:auto; }
+  #morePanel .tile {
+    flex-shrink:0; width: 72px; display:flex; flex-direction:column; align-items:center; gap:6px;
+    background: rgba(107,127,215,0.1); border:none; border-radius:10px; padding: 10px 4px; cursor:pointer;
+  }
+  #morePanel .tile:hover { background: rgba(107,127,215,0.18); }
+  #morePanel .tile svg { width:18px; height:18px; color: var(--accent); }
+  #morePanel .tile.fav.active svg { color: #e0a12c; }
+  #morePanel .tile span { font-size:10.5px; color: var(--ink-soft); }
+  #morePanel .listRow {
+    display:flex; align-items:center; gap:10px; padding: 11px 14px; cursor:pointer; font-size:13px; color:var(--ink);
+  }
+  #morePanel .listRow:hover { background: rgba(107,127,215,0.08); }
+  #morePanel .listRow svg { width:17px; height:17px; color: var(--ink-soft); flex-shrink:0; }
+  #morePanel .listRow .chev { margin-left:auto; color:#c9c2ac; transition: transform 0.15s ease; }
+  #morePanel .listRow.open .chev { transform: rotate(90deg); }
+  #morePanel .chipRow { display:flex; flex-wrap:wrap; gap:6px; padding: 0 14px 12px 41px; }
+  #morePanel .chip {
+    border:1px solid var(--paper-line); background: var(--panel); border-radius:999px;
+    padding: 5px 12px; font-size:11.5px; cursor:pointer; color: var(--ink-soft);
+  }
+  #morePanel .chip.active { background: var(--accent); border-color: var(--accent); color:white; }
+  #morePanel .fullRow { flex-basis:100%; font-size:10.5px; color:#8a8474; text-transform:uppercase; letter-spacing:0.05em; margin-top:6px; }
+  #chipsStylus { padding: 0; display:block; }
+
+  /* Favorite star on notebook cards */
+  .notebookCard .favBadge { position:absolute; top:6px; right:6px; color:#e0a12c; font-size:13px; }
+
+  /* Floating action button (New note / + menu) — shown on Home and inside any folder */
+  #fab {
+    position:absolute; right:22px; bottom:22px; z-index:15;
+    display:flex; flex-direction:column; align-items:flex-end; gap:12px;
+  }
+  #fab.hidden { display:none; }
+  #fabPlus {
+    width:48px; height:48px; border-radius:999px; border:none; background: var(--panel); color: var(--ink);
+    font-size:24px; line-height:1; box-shadow: 0 8px 20px var(--shadow); cursor:pointer;
+  }
+  #fabPlus:hover { background: rgba(107,127,215,0.1); }
+  #fabNewNote {
+    display:flex; align-items:center; gap:8px; border:none; border-radius:999px;
+    background: var(--accent); color:white; padding: 14px 22px; font-size:14px; font-weight:700;
+    cursor:pointer; box-shadow: 0 8px 20px var(--shadow); font-family:inherit;
+  }
+  #fabNewNote svg { width:16px; height:16px; }
+  #fabMenu { position:absolute; bottom:60px; right:0; min-width: 170px; }
+
+  /* All-pages grid modal */
+  #pagesModal {
+    position:absolute; inset:0; background: rgba(20,24,34,0.45);
+    display:flex; align-items:center; justify-content:center; z-index:30;
+  }
+  #pagesModal.hidden { display:none; }
+  #pagesModalCard {
+    background: var(--paper); border-radius:14px; width: min(560px, 90vw); max-height: 78vh;
+    display:flex; flex-direction:column; box-shadow: 0 20px 50px rgba(0,0,0,0.35);
+  }
+  #pagesModalHead { display:flex; align-items:center; justify-content:space-between; padding: 14px 18px; border-bottom:1px solid var(--paper-line); }
+  #pagesModalHead h2 { font-size:16px; margin:0; }
+  #pagesModalClose { border:none; background:transparent; cursor:pointer; color:#8a8474; font-size:18px; }
+
+  /* Template modal */
+  #templateModal {
+    position:absolute; inset:0; background: rgba(20,24,34,0.45);
+    display:flex; align-items:center; justify-content:center; z-index:35;
+  }
+  #templateModal.hidden { display:none; }
+  #templateModalCard {
+    background: var(--paper); border-radius:14px; width: min(420px, 90vw); max-height: 82vh;
+    display:flex; flex-direction:column; box-shadow: 0 20px 50px rgba(0,0,0,0.35); overflow:hidden;
+  }
+  .modalHead { display:flex; align-items:center; justify-content:space-between; padding: 14px 18px; border-bottom:1px solid var(--paper-line); }
+  .modalHead h2 { font-size:16px; margin:0; }
+  .modalClose { border:none; background:transparent; cursor:pointer; color:#8a8474; font-size:18px; }
+  .tmplBody { padding: 16px 18px; overflow-y:auto; flex:1; }
+  .tmplSwatches { display:flex; gap:10px; margin-bottom:18px; }
+  .tmplSwatch { width:32px; height:32px; border-radius:999px; border:2px solid var(--paper-line); cursor:pointer; flex-shrink:0; }
+  .tmplSwatch.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(107,127,215,0.25); }
+  .tmplSliderRow { display:flex; align-items:center; gap:10px; margin-bottom:18px; font-size:12px; color: var(--ink-soft); }
+  .tmplSliderRow input[type=range] { flex:1; accent-color: var(--accent); }
+  .tmplStyles { display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; }
+  .tmplStyleCard { cursor:pointer; text-align:center; }
+  .tmplStyleThumb { aspect-ratio: 3/4; border-radius:6px; border:2px solid var(--paper-line); margin-bottom:6px; }
+  .tmplStyleCard.active .tmplStyleThumb { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(107,127,215,0.2); }
+  .tmplStyleCard .lbl { font-size:11px; color: var(--ink-soft); }
+  .tmplFooter { padding: 14px 18px; border-top:1px solid var(--paper-line); }
+  .tmplDefaultCheck { display:flex; align-items:center; gap:8px; font-size:12px; color: var(--ink-soft); margin-bottom:10px; }
+  .tmplDefaultCheck input { accent-color: var(--accent); }
+  .tmplBtnRow { display:flex; gap:8px; }
+  .tmplBtn { flex:1; border:none; border-radius:8px; padding:11px; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit; }
+  .tmplBtn.primary { background: var(--accent); color:white; }
+  .tmplBtn.secondary { background: rgba(107,127,215,0.12); color: var(--accent); }
+
+  /* Radio-style settings rows (single/double finger) */
+  .radioPanel { padding: 0 14px 12px 41px; }
+  .radioGroupLabel { font-size:10.5px; color:#8a8474; text-transform:uppercase; letter-spacing:0.05em; margin: 6px 0 4px; }
+  .radioOption { display:flex; align-items:center; gap:8px; padding: 5px 0; font-size:13px; color: var(--ink); cursor:pointer; }
+  .radioOption input { accent-color: var(--accent); width:15px; height:15px; }
+  .lockNote { font-size:11px; color:#a39c86; margin-top:8px; line-height:1.4; }
+  #pagesGrid { padding: 16px 18px; overflow-y:auto; display:grid; grid-template-columns: repeat(auto-fill, minmax(90px,1fr)); gap:12px; }
+  .pageCard { position:relative; cursor:pointer; }
+  .pageCard .thumb {
+    background: var(--panel); border-radius:6px; aspect-ratio: 3/4;
+    display:flex; align-items:center; justify-content:center; font-size:20px; font-weight:700; color:#c9c2ac;
+    border: 2px solid transparent; box-shadow: 0 2px 8px var(--shadow);
+  }
+  .pageCard.active .thumb { border-color: var(--cover-accent); color: var(--cover-accent); }
+  .pageCard .label { font-size:11px; text-align:center; margin-top:4px; color:#8a8474; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .pageCard .pageDelete {
+    position:absolute; top:-6px; right:-6px; width:20px; height:20px; border-radius:999px;
+    border:none; background:var(--panel); color:#8a8474; font-size:11px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; opacity:0; transition: opacity 0.15s ease;
+    box-shadow: 0 2px 6px var(--shadow);
+  }
+  .pageCard:hover .pageDelete { opacity:1; }
+  .pageCard .pageDelete:hover { color: var(--danger); }
+  .pageCard.addTile .thumb { border: 2px dashed var(--paper-line); color:#a39c86; font-size:24px; box-shadow:none; background:transparent; }
+  .pageCard.addTile:hover .thumb { border-color: var(--accent); color: var(--accent); }
+
+  #editorBody { flex:1; position:relative; overflow:hidden; }
+  #canvasWrap {
+    position:absolute; inset:0; overflow:auto;
+    background-color: #b9b2a0; /* "desk" area around pages, like a document canvas */
+    -webkit-overflow-scrolling: touch;
+  }
+  #canvasStage {
+    display:flex; flex-direction:column; align-items:center; gap:28px;
+    width:100%; padding: 28px 16px 200px;
+    /* Anchor scaling at top-center instead of the top-left corner. Since pages are already
+       horizontally centered inside this full-width stage, scaling around its own horizontal
+       center keeps them visually centered at any zoom level instead of drifting toward the
+       left edge as soon as the scaled content is smaller than the viewport. */
+    transform-origin: 50% 0;
+  }
+  .pageFrame {
+    position:relative; flex-shrink:0; background:#fff;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.22);
+  }
+  .pageFrame::before {
+    content:""; position:absolute; left: 40px; top:0; bottom:0; width:1px;
+    background: rgba(180, 72, 58, 0.28); pointer-events:none; z-index:2;
+  }
+  .pageFrame.no-margin::before { display:none; }
+  .pageFrame canvas { position:absolute; top:0; left:0; cursor:crosshair; }
+  .pageFrame canvas.laserLayer { pointer-events:none; }
+
+  /* Bottom-left status pill: page count / zoom / lock */
+  #statusPill {
+    position:absolute; left:14px; bottom:14px; z-index:6;
+    display:flex; align-items:center; gap:10px;
+    background: var(--panel); border-radius:999px; padding: 6px 10px;
+    box-shadow: 0 6px 18px var(--shadow); border:1px solid var(--paper-line);
+    font-size:11px; color:#8a8474;
+  }
+  #statusPill .sep { opacity:0.5; }
+  #zoomBtn {
+    border:none; background:transparent; cursor:pointer; font-size:11px; font-weight:600;
+    color: var(--ink); font-family:inherit; padding:2px 4px;
+  }
+  #zoomMenu { min-width: 170px; padding: 6px 0; }
+  #lassoActionBar {
+    position:fixed; z-index:7; display:flex; gap:6px;
+    background: var(--panel); padding:4px; border-radius:999px;
+    box-shadow: 0 6px 14px var(--shadow); border:1px solid var(--paper-line);
+  }
+  #lassoActionBar.hidden { display:none; }
+  #lassoActionBar button {
+    width:30px; height:30px; border-radius:50%; border:none; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; color:#fff;
+  }
+  #lassoActionBar button.hidden { display:none; }
+  #lassoCopyBtn { background:#2f4fa8; }
+  #lassoCropBtn { background:#2f7a4f; }
+  #lassoLockBtn { background:#8a6d3b; }
+  #customPromptOverlay {
+    position:fixed; inset:0; z-index:100; background:rgba(20,18,14,0.35);
+    display:flex; align-items:center; justify-content:center;
+  }
+  #customPromptOverlay.hidden { display:none; }
+  #customPromptBox {
+    background: var(--panel); border-radius:14px; padding:18px 18px 14px;
+    width: min(320px, 88vw); box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+  }
+  #customPromptMessage { font-size:14px; color: var(--ink); margin-bottom:10px; line-height:1.4; }
+  #customPromptInput {
+    width:100%; box-sizing:border-box; font-size:14px; padding:9px 10px;
+    border:1px solid var(--paper-line); border-radius:8px; outline:none; font-family:inherit;
+    margin-bottom:14px;
+  }
+  #customPromptInput:focus { border-color: var(--accent); }
+  #customPromptActions { display:flex; justify-content:flex-end; gap:8px; }
+  #customPromptActions button {
+    border:none; border-radius:8px; padding:8px 14px; font-size:13px; font-weight:600; cursor:pointer;
+  }
+  #customPromptCancel { background:transparent; color:#8a8474; }
+  #customPromptOk { background: var(--accent); color:#fff; }
+  #movePickerOverlay {
+    position:fixed; inset:0; z-index:100; background:rgba(20,18,14,0.35);
+    display:flex; align-items:center; justify-content:center;
+  }
+  #movePickerOverlay.hidden { display:none; }
+  #movePickerBox {
+    background: var(--panel); border-radius:14px; padding:16px;
+    width: min(320px, 88vw); max-height:70vh; display:flex; flex-direction:column;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+  }
+  #movePickerTitle { font-size:14px; font-weight:600; color: var(--ink); margin-bottom:8px; }
+  #movePickerList { overflow-y:auto; flex:1; margin: 0 -8px; }
+  .moveOptionRow {
+    display:flex; align-items:center; gap:8px; padding:9px 8px; border-radius:8px; cursor:pointer; font-size:13px;
+  }
+  .moveOptionRow:hover { background: rgba(107,127,215,0.08); }
+  .moveOptionRow svg { flex-shrink:0; color:#8a8474; }
+  #movePickerCancel {
+    margin-top:10px; align-self:flex-end; border:none; background:transparent; color:#8a8474;
+    font-size:13px; font-weight:600; padding:8px 10px; cursor:pointer; border-radius:8px;
+  }
+  #lassoDeleteBtn { background:#b4483a; }
+  #zoomMenu .zRow {
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding: 9px 16px; cursor:pointer; font-size:14px; color: var(--ink);
+  }
+  #zoomMenu .zRow:hover { background: rgba(107,127,215,0.08); }
+  #zoomMenu .zRow .check { color: var(--accent); font-weight:700; }
+  #zoomMenu .zRow.action { display:flex; align-items:center; gap:10px; justify-content:flex-start; }
+  #zoomMenu .zRow.action svg { width:16px; height:16px; color: var(--ink-soft); flex-shrink:0; }
+  #zoomMenu .zDivider { height:1px; background: var(--paper-line); margin: 4px 0; }
+  #zoomMenu .zRow.locked { color: var(--accent); }
+
+  @media (max-width: 640px) {
+    .ebtn { width:34px; height:34px; }
+    #widthSlider { width:48px; }
+    #pageTitle { width: 90px; }
+  }
+  /* PDF import progress overlay */
+  #importOverlay {
+    position:absolute; inset:0; background: rgba(20,24,34,0.55);
+    display:flex; align-items:center; justify-content:center; z-index:40;
+  }
+  #importOverlay.hidden { display:none; }
+  #importCard {
+    background: var(--panel); border-radius:14px; padding: 28px 32px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.35); text-align:center; min-width:220px;
+  }
+  #importCard .spin {
+    width:28px; height:28px; border-radius:999px; border:3px solid var(--paper-line);
+    border-top-color: var(--accent); margin: 0 auto 12px; animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #importCard .msg { font-size:13px; color: var(--ink-soft); }
+</style>
+</head>
+<body>
+<div id="app">
+  <input type="file" id="pdfFileInput" accept="application/pdf" style="display:none">
+  <div id="importOverlay" class="hidden">
+    <div id="importCard">
+      <div class="spin"></div>
+      <div class="msg" id="importMsg">Importing PDF…</div>
+    </div>
+  </div>
+  <div id="tabRail">
+    <div class="brand">NOTEBOOK</div>
+    <button class="tabBtn active" id="homeTabBtn" title="Home">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
+    </button>
+    <div class="tabLabel">Home</div>
+    <button class="tabBtn" id="trashTabBtn" title="Recently Deleted">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+    </button>
+    <div class="tabLabel">Trash</div>
+    <div class="tabSpacer"></div>
+  </div>
+
+  <div id="content">
+    <!-- Browser: folders inside Home, and Recently Deleted -->
+    <div id="browserView">
+      <div id="breadcrumb"></div>
+      <div id="browserHeader">
+        <div>
+          <h1 id="browserTitle">Home</h1>
+          <p id="browserSubtitle">Your subjects</p>
+        </div>
+      </div>
+      <div id="grid"></div>
+      <div id="trashList" class="hidden"></div>
+      <div id="emptyState" class="hidden">Nothing here yet.</div>
+      <div id="fab" class="hidden">
+        <div class="popover hidden" id="fabMenu">
+          <div class="pRow" id="fabNewFolder">New folder</div>
+          <div class="pRow" id="fabImportPdf">Import PDF</div>
+        </div>
+        <button id="fabPlus" title="More options">+</button>
+        <button id="fabNewNote">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg>
+          New note
+        </button>
+      </div>
+    </div>
+
+    <!-- Editor: open notebook, pen on paper, full screen -->
+    <div id="editorView" class="hidden">
+      <div id="editorTopbar">
+        <button class="ebtn" id="backBtn" title="Back">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <button class="ebtn" id="allPagesBtn" title="All pages">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        </button>
+        <button class="ebtn" id="addPage" title="New page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <div style="position:relative;">
+          <button class="ebtn" id="recentBtn" title="Switch to recent notebooks">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M3 12l9 4 9-4"/></svg>
+          </button>
+        </div>
+        <input id="pageTitle" type="text" value="Untitled page" spellcheck="false">
+        <div class="ediv"></div>
+        <button class="ebtn" id="undoBtn" title="Undo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
+        </button>
+        <button class="ebtn" id="redoBtn" title="Redo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg>
+        </button>
+        <div class="ediv"></div>
+        <button class="ebtn active" id="penTool" title="Pen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
+        </button>
+        <button class="ebtn" id="pencilTool" title="Creative brush">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+        </button>
+        <button class="ebtn" id="highlighterTool" title="Highlighter">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l6-6 4 4-6 6H9v-4z"/><path d="M9 15l-5 5"/><path d="M4 20l-1 1"/></svg>
+        </button>
+        <button class="ebtn" id="eraserTool" title="Eraser">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H7L3 16c-.5-.5-.5-1.5 0-2L13 4c.5-.5 1.5-.5 2 0l5 5c.5.5.5 1.5 0 2L11 20"/><path d="M7 20l5-5"/></svg>
+        </button>
+        <button class="ebtn" id="lassoTool" title="Lasso">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3C7 3 3 6 3 10c0 3 2.5 5 6 5.6-1 1-1.4 2.2-.6 3 .8.8 2.2.5 3-.3"/><circle cx="17" cy="16" r="1.6"/></svg>
+        </button>
+        <div style="position:relative;">
+          <button class="ebtn" id="shapeTool" title="Shapes">
+            <svg id="shapeToolIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="10" width="9" height="9" rx="1.5"/><circle cx="17" cy="7" r="4"/></svg>
+          </button>
+          <div class="popover hidden" id="shapeMenu"></div>
+        </div>
+        <button class="ebtn" id="imageTool" title="Image">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+        </button>
+        <button class="ebtn" id="laserTool" title="Laser pointer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4"/></svg>
+        </button>
+        <button class="ebtn" id="tableTool" title="Table">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/></svg>
+        </button>
+        <div class="ediv"></div>
+        <button class="ebtn" id="arrowToggle" title="Colors and width">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div id="topSpacer"></div>
+        <div style="position:relative;">
+          <button class="ebtn" id="moreBtn" title="More">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>
+          </button>
+        </div>
+      </div>
+      <div id="toolOptionsRow" class="hidden"></div>
+      <input type="file" id="imageFileInput" accept="image/*" style="position:absolute;width:1px;height:1px;opacity:0;left:-9999px;">
+      <input type="color" id="customColorPicker" style="position:absolute;width:1px;height:1px;opacity:0;border:none;padding:0;left:-9999px;">
+      <div class="popover hidden" id="recentPopover"></div>
+      <div class="popover hidden" id="morePanel"></div>
+      <div id="editorBody">
+        <div id="canvasWrap">
+          <div id="canvasStage"></div>
+        </div>
+        <div id="statusPill">
+          <span id="pageCounter">1/1</span>
+          <span class="sep">·</span>
+          <button id="zoomBtn"><span id="zoomLabel">100%</span></button>
+        </div>
+        <div id="lassoActionBar" class="hidden">
+          <button id="lassoCopyBtn" title="Duplicate selection">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>
+          </button>
+          <button id="lassoCropBtn" class="hidden" title="Crop image">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg>
+          </button>
+          <button id="lassoLockBtn" class="hidden" title="Lock">
+            <svg id="lassoLockIcon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          </button>
+          <button id="lassoDeleteBtn" title="Delete selection">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="popover hidden" id="zoomMenu"></div>
+    </div>
+
+    <!-- All pages modal -->
+    <div id="pagesModal" class="hidden">
+      <div id="pagesModalCard">
+        <div id="pagesModalHead">
+          <h2>All pages</h2>
+          <button id="pagesModalClose">✕</button>
+        </div>
+        <div id="pagesGrid"></div>
+      </div>
+    </div>
+
+    <!-- Template modal -->
+    <div id="templateModal" class="hidden">
+      <div id="templateModalCard">
+        <div class="modalHead">
+          <h2>Template</h2>
+          <button class="modalClose" id="templateModalClose">✕</button>
+        </div>
+        <div class="tmplBody">
+          <div class="tmplSwatches" id="tmplSwatches"></div>
+          <div class="tmplSliderRow"><span>Density</span><input type="range" id="tmplDensity" min="1" max="9" value="5"><span id="tmplDensityVal">5</span></div>
+          <div class="tmplStyles" id="tmplStyles"></div>
+        </div>
+        <div class="tmplFooter">
+          <label class="tmplDefaultCheck"><input type="checkbox" id="tmplSetDefault"> Set as default for new notebooks</label>
+          <div class="tmplBtnRow">
+            <button id="tmplApplyAll" class="tmplBtn secondary">Apply to all pages</button>
+            <button id="tmplApplyCurrent" class="tmplBtn primary">Apply to current page</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="popover hidden" id="cardActionMenu"></div>
+  <div id="customPromptOverlay" class="hidden">
+    <div id="customPromptBox">
+      <div id="customPromptMessage"></div>
+      <input id="customPromptInput" type="text" spellcheck="false">
+      <div id="customPromptActions">
+        <button id="customPromptCancel">Cancel</button>
+        <button id="customPromptOk">OK</button>
+      </div>
+    </div>
+  </div>
+  <div id="movePickerOverlay" class="hidden">
+    <div id="movePickerBox">
+      <div id="movePickerTitle">Move to…</div>
+      <div id="movePickerList"></div>
+      <button id="movePickerCancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const SPINES = ['#6b7fd7', '#b4483a', '#2f7a4f', '#c9762f', '#8a5fb0', '#3a8fa0'];
+  function uid(){ return 'i' + Math.random().toString(36).slice(2,9); }
+
+  // ---- Data model ----
+  // data.folders[id]    = { name, notebookIds:[] }
+  // data.folderOrder    = [id...]
+  // data.notebooks[id]  = { name, folderId, spine, pages:{id:{title,strokes,redo}}, pageOrder:[id...],
+  //                          createdAt, modifiedAt, favorite, template:'ruled'|'grid'|'dot'|'blank', bgColor, spacingPx }
+  // data.trash          = [ {trashId, type:'folder'|'notebook', deletedAt, data, folderName?} ... ]
+  // data.settings        = { singleFinger:'ignored'|'draw'|'scroll', doubleFinger:'ignored'|'zoompan'|'scroll', palmRejection, defaultTemplate }
+  // data.rootNotebookIds = [id...]  — notebooks that live directly on Home, not inside a folder
+  let data = { folders:{}, folderOrder:[], notebooks:{}, trash:[], rootNotebookIds:[], settings:{ singleFinger:'draw', doubleFinger:'zoompan', palmRejection:true } };
+  let nav = { tab:'home', folderId:null, notebookId:null };
+  let activeNotebook = null;
+  let currentId = null;
+
+  function seedDefaults(){
+    ['Accounting','Business Law','Economics','Maths'].forEach(name => {
+      const id = uid();
+      data.folders[id] = { name, notebookIds: [], parentFolderId: null };
+      data.folderOrder.push(id);
+    });
+  }
+
+  // Default page-size presets (CSS pixels, screen-proportionate — not print DPI)
+  const PAGE_SIZES = {
+    a4:     { name:'A4',     width: 827,  height: 1169 },
+    letter: { name:'Letter', width: 850,  height: 1100 },
+    square: { name:'Square', width: 900,  height: 900  },
+    wide:   { name:'Wide',   width: 1200, height: 800  }
+  };
+
+  function newNotebookObj(name){
+    const now = Date.now();
+    const def = (data.settings && data.settings.defaultTemplate) || {};
+    return { name, pages:{}, pageOrder:[], createdAt: now, modifiedAt: now, favorite:false,
+      template: def.template || 'ruled', bgColor: def.bgColor || '#f6f3ec', spacingPx: def.spacing || 36,
+      pageSize: (data.settings && data.settings.defaultPageSize) || 'a4' };
+  }
+  function newPageObj(bg){ return { title:'Untitled page', strokes:[], redo:[], bg: bg || null }; }
+
+  async function importPdfAsNotebook(file){
+    const overlay = document.getElementById('importOverlay');
+    const msg = document.getElementById('importMsg');
+    const targetFolderId = nav.folderId || null;
+    const folder = targetFolderId ? data.folders[targetFolderId] : null;
+    overlay.classList.remove('hidden');
+    msg.textContent = 'Reading PDF…';
+    try {
+      if (window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions){
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      }
+      const buf = await file.arrayBuffer();
+      const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+      const nbId = uid();
+      const nb = newNotebookObj(file.name.replace(/\.pdf$/i, '') || 'Imported PDF');
+      const siblingCount = folder ? folder.notebookIds.length : (data.rootNotebookIds || []).length;
+      nb.spine = SPINES[siblingCount % SPINES.length];
+      nb.folderId = targetFolderId;
+      const maxWidth = 1100;
+      for (let i = 1; i <= pdf.numPages; i++){
+        msg.textContent = `Importing page ${i} of ${pdf.numPages}…`;
+        const page = await pdf.getPage(i);
+        const baseViewport = page.getViewport({ scale: 1 });
+        const scale = Math.min(2, maxWidth / baseViewport.width);
+        const viewport = page.getViewport({ scale });
+        const off = document.createElement('canvas');
+        off.width = viewport.width; off.height = viewport.height;
+        const octx = off.getContext('2d');
+        await page.render({ canvasContext: octx, viewport }).promise;
+        const dataUrl = off.toDataURL('image/jpeg', 0.82);
+        const pid = uid();
+        nb.pages[pid] = newPageObj(dataUrl);
+        nb.pages[pid].title = `Page ${i}`;
+        nb.pages[pid].bgWidth = viewport.width;
+        nb.pages[pid].bgHeight = viewport.height;
+        nb.pageOrder.push(pid);
+      }
+      data.notebooks[nbId] = nb;
+      if (folder) folder.notebookIds.push(nbId);
+      else { if (!data.rootNotebookIds) data.rootNotebookIds = []; data.rootNotebookIds.push(nbId); }
+      scheduleSave();
+      renderBrowser();
+    } catch(err){
+      msg.textContent = 'Could not import that PDF.';
+      await new Promise(r => setTimeout(r, 1400));
+    } finally {
+      overlay.classList.add('hidden');
+    }
+  }
+
+  // ---- Persistence ----
+  let saveTimer = null;
+  async function loadAll(){
+    try {
+      const res = await window.storage.get('inkling-data-v2', false);
+      if (res && res.value){
+        const parsed = JSON.parse(res.value);
+        data = Object.assign({folders:{}, folderOrder:[], notebooks:{}, trash:[], rootNotebookIds:[], settings:{singleFinger:'draw', doubleFinger:'zoompan', palmRejection:true}}, parsed);
+        if (!data.rootNotebookIds) data.rootNotebookIds = [];
+        if (!data.settings) data.settings = { singleFinger:'draw', doubleFinger:'zoompan', palmRejection:true };
+        if (!data.settings.singleFinger) data.settings.singleFinger = 'draw';
+        if (!data.settings.doubleFinger) data.settings.doubleFinger = 'zoompan';
+      }
+    } catch(e){ /* first run */ }
+    if (data.folderOrder.length === 0 && Object.keys(data.notebooks).length === 0){
+      seedDefaults();
+    }
+    renderBrowser();
+  }
+  function scheduleSave(){
+    if (nav.notebookId && data.notebooks[nav.notebookId]) data.notebooks[nav.notebookId].modifiedAt = Date.now();
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveAll, 500);
+  }
+  async function saveAll(){
+    try {
+      await window.storage.set('inkling-data-v2', JSON.stringify(data), false);
+    } catch(e){
+      /* best effort */
+    }
+  }
+
+  // ---- Tab switching ----
+  const homeTabBtn = document.getElementById('homeTabBtn');
+  const trashTabBtn = document.getElementById('trashTabBtn');
+  homeTabBtn.addEventListener('click', () => { nav = {tab:'home', folderId:null, notebookId:null}; showBrowser(); });
+  trashTabBtn.addEventListener('click', () => { nav.tab = 'trash'; nav.folderId=null; nav.notebookId=null; showBrowser(); });
+
+  function showBrowser(){
+    document.getElementById('editorView').classList.add('hidden');
+    document.getElementById('browserView').classList.remove('hidden');
+    document.getElementById('tabRail').classList.remove('hidden');
+    homeTabBtn.classList.toggle('active', nav.tab === 'home');
+    trashTabBtn.classList.toggle('active', nav.tab === 'trash');
+    renderBrowser();
+  }
+
+  // ---- Breadcrumb ----
+  function renderBreadcrumb(){
+    const bc = document.getElementById('breadcrumb');
+    bc.innerHTML = '';
+    if (nav.tab === 'trash'){
+      const c = document.createElement('span');
+      c.className = 'crumb current';
+      c.textContent = 'Recently Deleted';
+      bc.appendChild(c);
+      return;
+    }
+    const home = document.createElement('span');
+    home.className = 'crumb' + (nav.folderId ? '' : ' current');
+    home.textContent = 'Home';
+    home.addEventListener('click', () => { nav.folderId = null; renderBrowser(); });
+    bc.appendChild(home);
+    // Walk up from the current folder to build the full ancestor chain (root first).
+    const chain = [];
+    let cur = nav.folderId;
+    while (cur && data.folders[cur]){
+      chain.unshift(cur);
+      cur = data.folders[cur].parentFolderId || null;
+    }
+    chain.forEach((fid, i) => {
+      const sep = document.createElement('span'); sep.className='sep'; sep.textContent = '›';
+      bc.appendChild(sep);
+      const f = document.createElement('span');
+      f.className = 'crumb' + (i === chain.length - 1 ? ' current' : '');
+      f.textContent = data.folders[fid].name;
+      if (i !== chain.length - 1){
+        f.addEventListener('click', () => { nav.folderId = fid; renderBrowser(); });
+      }
+      bc.appendChild(f);
+    });
+  }
+
+  // ---- Browser rendering ----
+  function renderBrowser(){
+    renderBreadcrumb();
+    const grid = document.getElementById('grid');
+    const trashList = document.getElementById('trashList');
+    const empty = document.getElementById('emptyState');
+    const title = document.getElementById('browserTitle');
+    const subtitle = document.getElementById('browserSubtitle');
+    const fab = document.getElementById('fab');
+
+    if (nav.tab === 'trash'){
+      grid.classList.add('hidden');
+      trashList.classList.remove('hidden');
+      title.textContent = 'Recently Deleted';
+      subtitle.textContent = data.trash.length ? 'Restore, or remove for good.' : '';
+      renderTrash();
+      empty.classList.toggle('hidden', data.trash.length !== 0);
+      fab.classList.add('hidden');
+      return;
+    }
+    trashList.classList.add('hidden');
+    grid.classList.remove('hidden');
+    empty.classList.add('hidden');
+    fab.classList.remove('hidden');
+    document.getElementById('fabMenu').classList.add('hidden');
+
+    if (!nav.folderId){
+      title.textContent = 'Home';
+      subtitle.textContent = 'Your subjects and notes';
+      renderHomeGrid();
+    } else {
+      const folder = data.folders[nav.folderId];
+      title.textContent = folder ? folder.name : 'Folder';
+      subtitle.textContent = 'Folders and notebooks';
+      renderFolderContents();
+    }
+  }
+
+  function createFolderCardEl(id, folder){
+    const childFolderCount = data.folderOrder.filter(fid => data.folders[fid] && data.folders[fid].parentFolderId === id).length;
+    const countParts = [];
+    if (childFolderCount) countParts.push(`${childFolderCount} folder${childFolderCount===1?'':'s'}`);
+    countParts.push(`${folder.notebookIds.length} notebook${folder.notebookIds.length===1?'':'s'}`);
+    const card = document.createElement('div');
+    card.className = 'folderCard';
+    card.innerHTML = `
+      <div class="tabShape"></div>
+      <div class="body">
+        <button class="cardMenuBtn" title="More">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg>
+        </button>
+        <div class="name" contenteditable="false" spellcheck="false">${escapeHtml(folder.name)}</div>
+        <div class="count">${countParts.join(' · ')}</div>
+      </div>`;
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.cardMenuBtn') || (e.target.classList.contains('name') && e.target.isContentEditable)) return;
+      nav.folderId = id; renderBrowser();
+    });
+    const nameEl = card.querySelector('.name');
+    nameEl.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      nameEl.contentEditable = 'true';
+      nameEl.focus();
+      document.execCommand('selectAll', false, null);
+    });
+    nameEl.addEventListener('blur', () => {
+      nameEl.contentEditable = 'false';
+      const val = nameEl.textContent.trim() || 'Untitled';
+      folder.name = val;
+      scheduleSave();
+      renderBrowser();
+    });
+    nameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter'){ e.preventDefault(); nameEl.blur(); } });
+    card.querySelector('.cardMenuBtn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      openCardMenu(e.currentTarget, 'folder', id, nameEl);
+    });
+    return card;
+  }
+
+  function createNotebookCardEl(id, nb, idx){
+    const card = document.createElement('div');
+    card.className = 'notebookCard';
+    const spine = nb.spine || SPINES[idx % SPINES.length];
+    card.innerHTML = `
+      <div class="cover" style="--spine:${spine}">
+        ${nb.favorite ? '<span class="favBadge">★</span>' : ''}
+        <button class="cardMenuBtn" title="More">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg>
+        </button>
+        <div class="name" spellcheck="false">${escapeHtml(nb.name)}</div>
+        <div class="count">${nb.pageOrder.length} page${nb.pageOrder.length===1?'':'s'}</div>
+      </div>`;
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.cardMenuBtn') || (e.target.classList.contains('name') && e.target.isContentEditable)) return;
+      openNotebook(id);
+    });
+    const nameEl = card.querySelector('.name');
+    nameEl.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      nameEl.contentEditable = 'true';
+      nameEl.focus();
+      document.execCommand('selectAll', false, null);
+    });
+    nameEl.addEventListener('blur', () => {
+      nameEl.contentEditable = 'false';
+      nb.name = nameEl.textContent.trim() || 'Untitled notebook';
+      scheduleSave();
+      renderBrowser();
+    });
+    nameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter'){ e.preventDefault(); nameEl.blur(); } });
+    card.querySelector('.cardMenuBtn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      openCardMenu(e.currentTarget, 'notebook', id, nameEl);
+    });
+    return card;
+  }
+
+  function renderHomeGrid(){
+    const grid = document.getElementById('grid');
+    grid.innerHTML = '';
+    data.folderOrder.forEach(id => {
+      const folder = data.folders[id];
+      if (folder && !folder.parentFolderId) grid.appendChild(createFolderCardEl(id, folder));
+    });
+    (data.rootNotebookIds || []).forEach((id, idx) => {
+      const nb = data.notebooks[id];
+      if (nb) grid.appendChild(createNotebookCardEl(id, nb, idx));
+    });
+  }
+
+  function renderFolderContents(){
+    const grid = document.getElementById('grid');
+    grid.innerHTML = '';
+    const folder = data.folders[nav.folderId];
+    if (!folder) return;
+    data.folderOrder.forEach(fid => {
+      const sub = data.folders[fid];
+      if (sub && sub.parentFolderId === nav.folderId) grid.appendChild(createFolderCardEl(fid, sub));
+    });
+    folder.notebookIds.forEach((id, idx) => {
+      const nb = data.notebooks[id];
+      if (nb) grid.appendChild(createNotebookCardEl(id, nb, idx));
+    });
+  }
+
+  const pdfFileInput = document.getElementById('pdfFileInput');
+  pdfFileInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    pdfFileInput.value = '';
+    if (!file) return;
+    await importPdfAsNotebook(file);
+  });
+
+  function renderTrash(){
+    const list = document.getElementById('trashList');
+    list.innerHTML = '';
+    [...data.trash].reverse().forEach(entry => {
+      const row = document.createElement('div');
+      row.className = 'trashRow';
+      const kind = entry.type === 'folder' ? 'Folder' : 'Notebook';
+      let sub;
+      if (entry.type === 'folder'){
+        if (entry.tree){
+          const counts = { folders: 0, notebooks: 0 };
+          (function walk(t){ counts.notebooks += t.notebooks.length; (t.children||[]).forEach(c => { counts.folders++; walk(c); }); })(entry.tree);
+          const parts = [];
+          if (counts.folders) parts.push(`${counts.folders} folder${counts.folders===1?'':'s'}`);
+          parts.push(`${counts.notebooks} notebook${counts.notebooks===1?'':'s'}`);
+          sub = parts.join(' · ');
+        } else {
+          const n = (entry.embeddedNotebooks || []).length;
+          sub = `${n} notebook${n===1?'':'s'}`;
+        }
+      } else {
+        sub = `from ${entry.folderName || 'a deleted folder'}`;
+      }
+      row.innerHTML = `
+        <div class="info">
+          <div class="n">${escapeHtml(entry.data.name)} <span style="color:#a39c86;font-weight:400;">· ${kind}</span></div>
+          <div class="m">${sub}</div>
+        </div>
+        <div class="actions">
+          <button class="trashBtn restore">Restore</button>
+          <button class="trashBtn forever">Delete forever</button>
+        </div>`;
+      row.querySelector('.restore').addEventListener('click', () => restoreEntry(entry.trashId));
+      row.querySelector('.forever').addEventListener('click', () => {
+        data.trash = data.trash.filter(t => t.trashId !== entry.trashId);
+        scheduleSave();
+        renderBrowser();
+      });
+      list.appendChild(row);
+    });
+  }
+
+  function serializeFolderTree(id){
+    const folder = data.folders[id];
+    const notebooks = folder.notebookIds.map(nid => data.notebooks[nid]).filter(Boolean);
+    const children = data.folderOrder
+      .filter(fid => data.folders[fid] && data.folders[fid].parentFolderId === id)
+      .map(fid => serializeFolderTree(fid));
+    return { name: folder.name, notebooks, children };
+  }
+  function collectFolderAndDescendantIds(id){
+    let ids = [id];
+    data.folderOrder.forEach(fid => {
+      if (data.folders[fid] && data.folders[fid].parentFolderId === id){
+        ids = ids.concat(collectFolderAndDescendantIds(fid));
+      }
+    });
+    return ids;
+  }
+  function materializeFolderTree(tree, parentId){
+    const id = uid();
+    data.folders[id] = { name: tree.name, notebookIds: [], parentFolderId: parentId };
+    data.folderOrder.push(id);
+    (tree.notebooks || []).forEach(nb => {
+      const nid = uid();
+      nb.folderId = id;
+      data.notebooks[nid] = nb;
+      data.folders[id].notebookIds.push(nid);
+    });
+    (tree.children || []).forEach(childTree => materializeFolderTree(childTree, id));
+    return id;
+  }
+
+  function deleteFolder(id){
+    const folder = data.folders[id];
+    if (!folder) return;
+    data.trash.push({
+      trashId: uid(), type:'folder', deletedAt: Date.now(),
+      data: { name: folder.name },
+      originalParentId: folder.parentFolderId || null,
+      tree: serializeFolderTree(id)
+    });
+    const allIds = collectFolderAndDescendantIds(id);
+    allIds.forEach(fid => {
+      const f = data.folders[fid];
+      if (f) f.notebookIds.forEach(nid => delete data.notebooks[nid]);
+      delete data.folders[fid];
+    });
+    data.folderOrder = data.folderOrder.filter(fid => !allIds.includes(fid));
+    if (allIds.includes(nav.folderId)) nav.folderId = folder.parentFolderId || null;
+    scheduleSave();
+    renderBrowser();
+  }
+
+  function deleteNotebook(id){
+    const nb = data.notebooks[id];
+    if (!nb) return;
+    const folder = nav.folderId ? data.folders[nav.folderId] : null;
+    data.trash.push({
+      trashId: uid(), type:'notebook', deletedAt: Date.now(),
+      data: nb, folderId: nav.folderId || null, folderName: folder ? folder.name : null,
+      wasRoot: !nav.folderId
+    });
+    delete data.notebooks[id];
+    if (folder) folder.notebookIds = folder.notebookIds.filter(n => n !== id);
+    else data.rootNotebookIds = (data.rootNotebookIds || []).filter(n => n !== id);
+    scheduleSave();
+    renderBrowser();
+  }
+
+  // ---- Move: reassign a notebook or folder to a different parent folder (or Home) ----
+  function moveNotebookToFolder(nbId, destFolderId){
+    const nb = data.notebooks[nbId];
+    if (!nb) return;
+    const oldFolderId = nb.folderId || null;
+    if (oldFolderId === (destFolderId || null)) return;
+    if (oldFolderId && data.folders[oldFolderId]){
+      data.folders[oldFolderId].notebookIds = data.folders[oldFolderId].notebookIds.filter(x => x !== nbId);
+    } else {
+      data.rootNotebookIds = (data.rootNotebookIds || []).filter(x => x !== nbId);
+    }
+    if (destFolderId && data.folders[destFolderId]){
+      data.folders[destFolderId].notebookIds.push(nbId);
+    } else {
+      data.rootNotebookIds = data.rootNotebookIds || [];
+      data.rootNotebookIds.push(nbId);
+    }
+    nb.folderId = destFolderId || null;
+    scheduleSave();
+    renderBrowser();
+  }
+  function moveFolderToParent(folderId, destParentId){
+    const folder = data.folders[folderId];
+    if (!folder || folder.parentFolderId === (destParentId || null)) return;
+    folder.parentFolderId = destParentId || null;
+    scheduleSave();
+    renderBrowser();
+  }
+
+  // ---- Move-to picker: a flat, indented list of Home + every valid destination folder ----
+  function buildFolderOptions(excludeIds){
+    const options = [{ id: null, label: 'Home', depth: 0 }];
+    (function walk(parentId, depth){
+      data.folderOrder.forEach(fid => {
+        const f = data.folders[fid];
+        if (!f || f.parentFolderId !== parentId) return;
+        if (excludeIds && excludeIds.has(fid)) return;
+        options.push({ id: fid, label: f.name, depth });
+        walk(fid, depth + 1);
+      });
+    })(null, 1);
+    return options;
+  }
+  function openMovePicker(excludeIds, onPick){
+    const overlay = document.getElementById('movePickerOverlay');
+    const list = document.getElementById('movePickerList');
+    const options = buildFolderOptions(excludeIds);
+    const folderIcon = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>';
+    const homeIcon = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>';
+    list.innerHTML = options.map((o, i) => `
+      <div class="moveOptionRow" data-idx="${i}" style="padding-left:${8 + o.depth * 18}px;">
+        ${o.id === null ? homeIcon : folderIcon}
+        <span>${escapeHtml(o.label)}</span>
+      </div>`).join('');
+    list.querySelectorAll('.moveOptionRow').forEach(row => {
+      row.addEventListener('click', () => {
+        overlay.classList.add('hidden');
+        onPick(options[parseInt(row.dataset.idx, 10)].id);
+      });
+    });
+    overlay.classList.remove('hidden');
+  }
+  document.getElementById('movePickerCancel').addEventListener('click', () => {
+    document.getElementById('movePickerOverlay').classList.add('hidden');
+  });
+
+  // ---- Card action menu (3-dot): Rename, Move, Delete, and Share as PDF for notebooks ----
+  const cardActionMenu = document.getElementById('cardActionMenu');
+  function openCardMenu(btn, kind, id, nameEl){
+    const isFolder = kind === 'folder';
+    const icons = {
+      rename: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+      move: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>',
+      pdf: '<path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 21h14"/>',
+      del: '<path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6"/>'
+    };
+    const row = (action, label, icon, danger) => `
+      <div class="pRow" data-action="${action}"${danger ? ' style="color:#b4483a;"' : ''}>
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icon}</svg>
+        ${label}
+      </div>`;
+    cardActionMenu.innerHTML =
+      row('rename', 'Rename', icons.rename) +
+      row('move', 'Move', icons.move) +
+      (isFolder ? '' : row('pdf', 'Share as PDF', icons.pdf)) +
+      '<div class="pDivider"></div>' +
+      row('delete', 'Delete', icons.del, true);
+    cardActionMenu.querySelectorAll('[data-action]').forEach(r => {
+      r.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        cardActionMenu.classList.add('hidden');
+        const action = r.dataset.action;
+        if (action === 'delete'){
+          if (isFolder) deleteFolder(id); else deleteNotebook(id);
+        } else if (action === 'rename'){
+          nameEl.contentEditable = 'true';
+          nameEl.focus();
+          document.execCommand('selectAll', false, null);
+        } else if (action === 'move'){
+          if (isFolder){
+            const exclude = new Set(collectFolderAndDescendantIds(id));
+            openMovePicker(exclude, (destId) => moveFolderToParent(id, destId));
+          } else {
+            openMovePicker(null, (destId) => moveNotebookToFolder(id, destId));
+          }
+        } else if (action === 'pdf'){
+          await shareNotebookAsPDF(id);
+        }
+      });
+    });
+    positionPopover(cardActionMenu, btn);
+    cardActionMenu.classList.remove('hidden');
+  }
+  document.addEventListener('click', () => cardActionMenu.classList.add('hidden'));
+
+  // ---- Share as PDF: rasterize every page (background + strokes) and assemble one PDF ----
+  function loadImageAsync(src){
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(img);
+      img.src = src;
+    });
+  }
+  function getEffectiveTemplateForNb(nb, page){
+    if (page.tmplOverride) return page.tmplOverride;
+    return { bgColor: nb.bgColor || '#f6f3ec', template: nb.template || 'ruled', spacing: nb.spacingPx || 36 };
+  }
+  async function renderPageOffscreen(nb, page){
+    const size = pageSizeFor(page, nb);
+    const scale = 2;
+    const bg = document.createElement('canvas');
+    const ink = document.createElement('canvas');
+    bg.width = ink.width = size.width * scale;
+    bg.height = ink.height = size.height * scale;
+    const bgCtx = bg.getContext('2d');
+    const inkCtx = ink.getContext('2d');
+    bgCtx.setTransform(scale, 0, 0, scale, 0, 0);
+    inkCtx.setTransform(scale, 0, 0, scale, 0, 0);
+    if (page.bg){
+      const img = await loadImageAsync(page.bg);
+      bgCtx.drawImage(img, 0, 0, size.width, size.height);
+    } else {
+      bgCtx.fillStyle = getEffectiveTemplateForNb(nb, page).bgColor || '#f6f3ec';
+      bgCtx.fillRect(0, 0, size.width, size.height);
+    }
+    const imageSrcs = [...new Set(page.strokes.filter(s => s.tool === 'image').map(s => s.src))];
+    for (const src of imageSrcs){
+      const cached = imageObjCache.get(src);
+      if (!cached || !cached.complete) imageObjCache.set(src, await loadImageAsync(src));
+    }
+    const lockedProtected = page.strokes.filter(s => (s.tool === 'image' || s.tool === 'table') && s.locked);
+    for (const stroke of page.strokes){
+      if (stroke.tool === 'eraser' && lockedProtected.length) eraseWithProtection(inkCtx, stroke, lockedProtected);
+      else drawFullStroke(inkCtx, stroke, null);
+    }
+    const off = document.createElement('canvas');
+    off.width = size.width * scale; off.height = size.height * scale;
+    const octx = off.getContext('2d');
+    octx.drawImage(bg, 0, 0);
+    octx.drawImage(ink, 0, 0);
+    return off.toDataURL('image/png');
+  }
+  let jsPDFLoadPromise = null;
+  function ensureJsPDF(){
+    if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve();
+    if (jsPDFLoadPromise) return jsPDFLoadPromise;
+    jsPDFLoadPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error('load failed'));
+      document.head.appendChild(script);
+    });
+    return jsPDFLoadPromise;
+  }
+  async function shareNotebookAsPDF(nbId){
+    const nb = data.notebooks[nbId];
+    if (!nb || !nb.pageOrder.length) return;
+    try { await ensureJsPDF(); }
+    catch(e){ await customConfirm('Could not load the PDF export library — check your internet connection and try again.'); return; }
+    const { jsPDF } = window.jspdf;
+    let doc = null;
+    for (const pageId of nb.pageOrder){
+      const page = nb.pages[pageId];
+      if (!page) continue;
+      const size = pageSizeFor(page, nb);
+      const wCm = size.width / PX_PER_CM, hCm = size.height / PX_PER_CM;
+      const dataUrl = await renderPageOffscreen(nb, page);
+      if (!doc) doc = new jsPDF({ unit:'cm', format:[wCm, hCm] });
+      else doc.addPage([wCm, hCm]);
+      doc.addImage(dataUrl, 'PNG', 0, 0, wCm, hCm);
+    }
+    if (doc){
+      const safeName = (nb.name || 'notebook').replace(/[^\w\- ]+/g,'').trim() || 'notebook';
+      doc.save(`${safeName}.pdf`);
+    }
+  }
+
+  function restoreEntry(trashId){
+    const entry = data.trash.find(t => t.trashId === trashId);
+    if (!entry) return;
+    if (entry.type === 'folder'){
+      if (entry.tree){
+        // New nested format: rebuild the whole subtree, reattaching to its original parent if
+        // that folder still exists, otherwise dropping it back at Home.
+        const parentId = entry.originalParentId && data.folders[entry.originalParentId] ? entry.originalParentId : null;
+        materializeFolderTree(entry.tree, parentId);
+      } else {
+        // Old flat format from before nested folders existed.
+        const id = uid();
+        data.folders[id] = { name: entry.data.name, notebookIds: [], parentFolderId: null };
+        data.folderOrder.push(id);
+        (entry.embeddedNotebooks || []).forEach(({nb}) => {
+          const nid = uid();
+          data.notebooks[nid] = nb;
+          data.folders[id].notebookIds.push(nid);
+        });
+      }
+    } else if (entry.wasRoot){
+      const nid = uid();
+      entry.data.folderId = null;
+      data.notebooks[nid] = entry.data;
+      if (!data.rootNotebookIds) data.rootNotebookIds = [];
+      data.rootNotebookIds.push(nid);
+    } else {
+      let targetFolderId = entry.folderId && data.folders[entry.folderId] ? entry.folderId : null;
+      if (!targetFolderId){
+        // original folder is gone — restore into a catch-all "Restored" folder
+        targetFolderId = data.folderOrder.find(fid => data.folders[fid].name === 'Restored');
+        if (!targetFolderId){
+          targetFolderId = uid();
+          data.folders[targetFolderId] = { name: 'Restored', notebookIds: [], parentFolderId: null };
+          data.folderOrder.push(targetFolderId);
+        }
+      }
+      const nid = uid();
+      data.notebooks[nid] = entry.data;
+      data.folders[targetFolderId].notebookIds.push(nid);
+    }
+    data.trash = data.trash.filter(t => t.trashId !== trashId);
+    scheduleSave();
+    renderBrowser();
+  }
+
+  function escapeHtml(s){
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  // ---- Custom prompt/confirm modal — replaces window.prompt/confirm, which some embedded
+  // webviews block outright or silently no-op on, making features that depend on them look broken. ----
+  function showCustomModal({ message, defaultValue = '', isConfirm = false }){
+    return new Promise((resolve) => {
+      const overlay = document.getElementById('customPromptOverlay');
+      const msgEl = document.getElementById('customPromptMessage');
+      const inputEl = document.getElementById('customPromptInput');
+      const okBtn = document.getElementById('customPromptOk');
+      const cancelBtn = document.getElementById('customPromptCancel');
+      msgEl.textContent = message;
+      inputEl.style.display = isConfirm ? 'none' : 'block';
+      inputEl.value = defaultValue;
+      overlay.classList.remove('hidden');
+      if (!isConfirm){ inputEl.focus(); inputEl.select(); }
+      function cleanup(result){
+        overlay.classList.add('hidden');
+        okBtn.onclick = null; cancelBtn.onclick = null; inputEl.onkeydown = null;
+        resolve(result);
+      }
+      okBtn.onclick = () => cleanup(isConfirm ? true : inputEl.value);
+      cancelBtn.onclick = () => cleanup(isConfirm ? false : null);
+      inputEl.onkeydown = (e) => {
+        if (e.key === 'Enter'){ e.preventDefault(); cleanup(inputEl.value); }
+        else if (e.key === 'Escape'){ e.preventDefault(); cleanup(isConfirm ? false : null); }
+      };
+    });
+  }
+  function customPrompt(message, defaultValue){ return showCustomModal({ message, defaultValue: defaultValue || '', isConfirm:false }); }
+  function customConfirm(message){ return showCustomModal({ message, isConfirm:true }); }
+
+  // ---- FAB: New note / New folder / Import PDF, available on Home and inside any folder ----
+  const fabMenu = document.getElementById('fabMenu');
+  document.getElementById('fabPlus').addEventListener('click', (e) => {
+    e.stopPropagation();
+    fabMenu.classList.toggle('hidden');
+  });
+  document.getElementById('fabNewFolder').addEventListener('click', async () => {
+    fabMenu.classList.add('hidden');
+    const name = await customPrompt('Folder name');
+    if (name === null) return; // cancelled — don't create an empty folder
+    const id = uid();
+    data.folders[id] = { name: name.trim() || 'New folder', notebookIds: [], parentFolderId: nav.folderId || null };
+    data.folderOrder.push(id);
+    scheduleSave();
+    renderBrowser(); // stays right where you are, so nested folders land inside the current folder
+  });
+  document.getElementById('fabImportPdf').addEventListener('click', () => {
+    fabMenu.classList.add('hidden');
+    pdfFileInput.click();
+  });
+  document.getElementById('fabNewNote').addEventListener('click', () => {
+    fabMenu.classList.add('hidden');
+    const id = uid();
+    const nb = newNotebookObj('Untitled notebook');
+    if (nav.folderId && data.folders[nav.folderId]){
+      const folder = data.folders[nav.folderId];
+      nb.spine = SPINES[folder.notebookIds.length % SPINES.length];
+      nb.folderId = nav.folderId;
+      data.notebooks[id] = nb;
+      folder.notebookIds.push(id);
+    } else {
+      if (!data.rootNotebookIds) data.rootNotebookIds = [];
+      nb.spine = SPINES[data.rootNotebookIds.length % SPINES.length];
+      nb.folderId = null;
+      data.notebooks[id] = nb;
+      data.rootNotebookIds.push(id);
+    }
+    scheduleSave();
+    openNotebook(id);
+  });
+  document.addEventListener('click', () => fabMenu.classList.add('hidden'));
+
+  // ================= Notebook editor (continuous scroll, Word-style) =================
+  const wrap = document.getElementById('canvasWrap');
+  const stage = document.getElementById('canvasStage');
+  const titleEl = document.getElementById('pageTitle');
+  const pageCounterEl = document.getElementById('pageCounter');
+  const zoomLabelEl = document.getElementById('zoomLabel');
+  let dpr = Math.max(window.devicePixelRatio || 1, 1);
+
+  let tool = 'pen';
+  let color = '#1c2430';
+  let width = 2.5;
+  // A4 is defined as 827px for a real 21cm width, so that ratio is this app's px-per-cm baseline.
+  const PX_PER_CM = 827 / 21;
+  let eraserWidth = PX_PER_CM * 1; // default 1cm — kept separate from `width` so switching tools never bleeds sizes into each other
+  let drawing = false;
+  let currentStroke = null;
+  let zoom = 1;
+  let zoomLocked = false;
+  let laserTimer = null;
+  let pageCanvases = new Map(); // pageId -> {frame, canvas, ctx, laserCanvas, laserCtx}
+  let pageObserver = null;
+
+  function openNotebook(id){
+    activeNotebook = data.notebooks[id];
+    nav.notebookId = id;
+    nav.folderId = activeNotebook.folderId || null;
+    if (!activeNotebook.pageOrder.length){
+      const pid = uid();
+      activeNotebook.pages[pid] = newPageObj();
+      activeNotebook.pageOrder.push(pid);
+    }
+    if (!data.recentNotebooks) data.recentNotebooks = [];
+    data.recentNotebooks = [id, ...data.recentNotebooks.filter(r => r !== id)].slice(0, 6);
+    document.getElementById('browserView').classList.add('hidden');
+    document.getElementById('editorView').classList.remove('hidden');
+    document.getElementById('tabRail').classList.add('hidden');
+    zoom = 1; zoomLocked = false; applyZoom();
+    try {
+      const p = document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
+      if (p && p.catch) p.catch(()=>{});
+    } catch(e){ /* fullscreen not permitted in this context — fine, we already fill the viewport */ }
+    currentId = activeNotebook.pageOrder[0];
+    renderPageStack();
+    wrap.scrollTop = 0; wrap.scrollLeft = 0;
+    updateActivePageUI();
+    scheduleSave();
+  }
+
+  document.getElementById('backBtn').addEventListener('click', () => {
+    nav.notebookId = null;
+    if (document.fullscreenElement){
+      try { document.exitFullscreen().catch(()=>{}); } catch(e){}
+    }
+    showBrowser();
+  });
+
+  // ---- Page sizing: PDF-imported pages use their own natural size; regular pages use the notebook's page-size preset ----
+  function pageSizeFor(page, notebook){
+    if (page.bg && page.bgWidth && page.bgHeight) return { width: page.bgWidth, height: page.bgHeight };
+    const preset = PAGE_SIZES[notebook.pageSize] || PAGE_SIZES.a4;
+    return { width: preset.width, height: preset.height };
+  }
+
+  function mid(a,b){ return { x:(a.x+b.x)/2, y:(a.y+b.y)/2 }; }
+
+  const TOOL_STYLE = {
+    pen:         { widthMul: 1,   alpha: 1,    composite: 'source-over', pressureDamp: 0 },
+    pencil:      { widthMul: 0.55,alpha: 0.85, composite: 'source-over', pressureDamp: 0.5 },
+    highlighter: { widthMul: 3.2, alpha: 1,    composite: 'multiply',    pressureDamp: 1 },
+    eraser:      { widthMul: 1,   alpha: 1,    composite: 'destination-out', pressureDamp: 0 },
+    laser:       { widthMul: 1,   alpha: 0.9,  composite: 'source-over', pressureDamp: 1 }
+  };
+
+  // Shape tools draw a straight-edge primitive from the drag's start point to its current point,
+  // instead of a freehand path — they don't use TOOL_STYLE (no pressure/tapering), so they fall
+  // back to the plain pen look (solid ink, source-over) inside setupStrokeStyle.
+  const SHAPE_TOOLS = new Set(['shapeLine', 'shapeRect', 'shapeCircle', 'shapeTriangle', 'shapeArrow']);
+
+  // Tap tools stamp a single pre-configured object at the tapped point — no drag, no points array.
+  // Drag tools (shapes + table + image) are all sized the same way: drag from a start corner to
+  // wherever the pointer currently is, with a live full-redraw preview each move.
+  const DRAG_TOOLS = new Set(['shapeLine', 'shapeRect', 'shapeCircle', 'table', 'image']);
+
+  function effectivePressure(stroke, p){
+    const s = TOOL_STYLE[stroke.tool] || TOOL_STYLE.pen;
+    return s.pressureDamp ? (1 - s.pressureDamp) + p * s.pressureDamp * 0.6 + 0.4*s.pressureDamp : p;
+  }
+  function widthFor(stroke, p){
+    const s = TOOL_STYLE[stroke.tool] || TOOL_STYLE.pen;
+    return Math.max(stroke.width * s.widthMul * effectivePressure(stroke, p), 0.6);
+  }
+  function setupStrokeStyle(c, stroke){
+    const s = TOOL_STYLE[stroke.tool] || TOOL_STYLE.pen;
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    c.globalAlpha = s.alpha;
+    if (stroke.tool === 'eraser'){
+      c.globalCompositeOperation = 'destination-out';
+      c.strokeStyle = 'rgba(0,0,0,1)';
+      c.fillStyle = 'rgba(0,0,0,1)';
+    } else if (stroke.tool === 'laser'){
+      c.globalCompositeOperation = 'source-over';
+      c.strokeStyle = '#ff3b30';
+      c.fillStyle = '#ff3b30';
+      c.shadowColor = '#ff3b30';
+      c.shadowBlur = 8;
+    } else {
+      c.globalCompositeOperation = s.composite;
+      c.strokeStyle = stroke.color;
+      c.fillStyle = stroke.color;
+      c.shadowBlur = 0;
+    }
+  }
+
+  // Laser pointer: three passes (soft outer glow, brighter mid glow, hot white core) for a
+  // neon-trail look instead of a plain thin line.
+  function drawLaserSegment(c, stroke){
+    const pts = stroke.points;
+    const n = pts.length;
+    const baseW = stroke.width || 6;
+    c.save();
+    c.lineCap = 'round'; c.lineJoin = 'round';
+    c.globalCompositeOperation = 'source-over';
+    if (n < 2){
+      const p = pts[0];
+      c.shadowColor = '#ff3b30'; c.shadowBlur = 24;
+      c.fillStyle = 'rgba(255,59,48,0.55)';
+      c.beginPath(); c.arc(p.x, p.y, baseW * 1.1, 0, Math.PI*2); c.fill();
+      c.shadowBlur = 6;
+      c.fillStyle = '#fff';
+      c.beginPath(); c.arc(p.x, p.y, Math.max(1, baseW * 0.35), 0, Math.PI*2); c.fill();
+      c.restore();
+      return;
+    }
+    let start, end, midp;
+    if (n === 2){ start = pts[0]; end = pts[1]; }
+    else { const p1 = pts[n-3], p2 = pts[n-2], p3 = pts[n-1]; start = mid(p1,p2); end = mid(p2,p3); midp = p2; }
+    const tracePath = () => {
+      c.beginPath();
+      c.moveTo(start.x, start.y);
+      if (midp) c.quadraticCurveTo(midp.x, midp.y, end.x, end.y);
+      else c.lineTo(end.x, end.y);
+    };
+    c.shadowColor = '#ff3b30';
+    c.shadowBlur = 26; c.strokeStyle = 'rgba(255,59,48,0.5)'; c.lineWidth = baseW * 2.4;
+    tracePath(); c.stroke();
+    c.shadowBlur = 13; c.strokeStyle = 'rgba(255,59,48,0.9)'; c.lineWidth = baseW * 1.2;
+    tracePath(); c.stroke();
+    c.shadowBlur = 4; c.strokeStyle = 'rgba(255,255,255,0.95)'; c.lineWidth = Math.max(1, baseW * 0.35);
+    tracePath(); c.stroke();
+    c.restore();
+  }
+
+  function drawIncrementalSegment(c, stroke){
+    if (stroke.tool === 'laser'){ drawLaserSegment(c, stroke); return; }
+    if (stroke.tool === 'eraser' && activePageId && activeNotebook){
+      const page = activeNotebook.pages[activePageId];
+      const locked = page ? page.strokes.filter(s => (s.tool === 'image' || s.tool === 'table') && s.locked) : [];
+      if (locked.length){
+        const pts = stroke.points, recent = pts.slice(-3);
+        let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+        recent.forEach(p => { minX=Math.min(minX,p.x); minY=Math.min(minY,p.y); maxX=Math.max(maxX,p.x); maxY=Math.max(maxY,p.y); });
+        const pad = (stroke.width || 10) + 4;
+        minX-=pad; minY-=pad; maxX+=pad; maxY+=pad;
+        const overlapping = locked.filter(s => {
+          const b = strokeRectBounds(s);
+          return !(b.x2 < minX || b.x1 > maxX || b.y2 < minY || b.y1 > maxY);
+        });
+        if (overlapping.length){
+          const t = c.getTransform();
+          const snapshots = [];
+          overlapping.forEach(s => {
+            const b = strokeRectBounds(s);
+            const ix1 = Math.max(b.x1, minX), iy1 = Math.max(b.y1, minY);
+            const ix2 = Math.min(b.x2, maxX), iy2 = Math.min(b.y2, maxY);
+            if (ix2 <= ix1 || iy2 <= iy1) return;
+            const dx = Math.round(ix1*t.a + t.e), dy = Math.round(iy1*t.d + t.f);
+            const dw = Math.round((ix2-ix1)*t.a), dh = Math.round((iy2-iy1)*t.d);
+            if (dw <= 0 || dh <= 0) return;
+            try { snapshots.push({ x: dx, y: dy, data: c.getImageData(dx, dy, dw, dh) }); }
+            catch(e){}
+          });
+          drawIncrementalSegmentInner(c, stroke);
+          snapshots.forEach(snap => c.putImageData(snap.data, snap.x, snap.y));
+          return;
+        }
+      }
+    }
+    drawIncrementalSegmentInner(c, stroke);
+  }
+  function drawIncrementalSegmentInner(c, stroke){
+    const pts = stroke.points;
+    const n = pts.length;
+    setupStrokeStyle(c, stroke);
+    if (n === 1){
+      const p = pts[0];
+      c.beginPath();
+      c.arc(p.x, p.y, widthFor(stroke, p.pressure)/2, 0, Math.PI*2);
+      c.fill();
+      return;
+    }
+    if (n === 2){
+      const p0 = pts[0], p1 = pts[1];
+      c.beginPath();
+      c.lineWidth = widthFor(stroke, p1.pressure);
+      c.moveTo(p0.x, p0.y);
+      c.lineTo(p1.x, p1.y);
+      c.stroke();
+      return;
+    }
+    const p1 = pts[n-3], p2 = pts[n-2], p3 = pts[n-1];
+    const start = mid(p1, p2);
+    const end = mid(p2, p3);
+    c.beginPath();
+    c.lineWidth = widthFor(stroke, p2.pressure);
+    c.moveTo(start.x, start.y);
+    c.quadraticCurveTo(p2.x, p2.y, end.x, end.y);
+    c.stroke();
+    c.globalAlpha = 1; c.shadowBlur = 0;
+  }
+
+  function drawShapeStroke(c, stroke){
+    setupStrokeStyle(c, stroke);
+    c.lineWidth = stroke.width;
+    c.beginPath();
+    if (stroke.tool === 'shapeRect'){
+      const x = Math.min(stroke.x1, stroke.x2), y = Math.min(stroke.y1, stroke.y2);
+      const w = Math.abs(stroke.x2 - stroke.x1), h = Math.abs(stroke.y2 - stroke.y1);
+      c.rect(x, y, w, h);
+    } else if (stroke.tool === 'shapeCircle'){
+      const cx = (stroke.x1 + stroke.x2) / 2, cy = (stroke.y1 + stroke.y2) / 2;
+      const rx = Math.abs(stroke.x2 - stroke.x1) / 2, ry = Math.abs(stroke.y2 - stroke.y1) / 2;
+      c.ellipse(cx, cy, Math.max(rx, 0.01), Math.max(ry, 0.01), 0, 0, Math.PI * 2);
+    } else if (stroke.tool === 'shapeTriangle'){
+      const x1 = Math.min(stroke.x1, stroke.x2), x2 = Math.max(stroke.x1, stroke.x2);
+      const y1 = Math.min(stroke.y1, stroke.y2), y2 = Math.max(stroke.y1, stroke.y2);
+      c.moveTo((x1 + x2) / 2, y1);
+      c.lineTo(x2, y2);
+      c.lineTo(x1, y2);
+      c.closePath();
+    } else if (stroke.tool === 'shapeArrow'){
+      const dx = stroke.x2 - stroke.x1, dy = stroke.y2 - stroke.y1;
+      const len = Math.hypot(dx, dy) || 1;
+      const ux = dx / len, uy = dy / len;
+      const headLen = Math.max(10, stroke.width * 3);
+      const angle = Math.PI / 7;
+      c.moveTo(stroke.x1, stroke.y1);
+      c.lineTo(stroke.x2, stroke.y2);
+      const cos1 = Math.cos(angle), sin1 = Math.sin(angle);
+      const cos2 = Math.cos(-angle), sin2 = Math.sin(-angle);
+      c.moveTo(stroke.x2, stroke.y2);
+      c.lineTo(stroke.x2 - headLen * (ux * cos1 - uy * sin1), stroke.y2 - headLen * (uy * cos1 + ux * sin1));
+      c.moveTo(stroke.x2, stroke.y2);
+      c.lineTo(stroke.x2 - headLen * (ux * cos2 - uy * sin2), stroke.y2 - headLen * (uy * cos2 + ux * sin2));
+    } else {
+      c.moveTo(stroke.x1, stroke.y1);
+      c.lineTo(stroke.x2, stroke.y2);
+    }
+    c.stroke();
+    c.globalAlpha = 1; c.shadowBlur = 0;
+  }
+
+  function drawTextStroke(c, stroke){
+    c.save();
+    c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; c.shadowBlur = 0;
+    c.fillStyle = stroke.color;
+    c.font = `${stroke.fontSize || 22}px Georgia, "Iowan Old Style", serif`;
+    c.textBaseline = 'top';
+    c.fillText(stroke.text, stroke.x, stroke.y);
+    c.restore();
+  }
+
+  function drawLockBadge(c, stroke){
+    if (!stroke.locked) return;
+    const x = Math.min(stroke.x1, stroke.x2), y = Math.min(stroke.y1, stroke.y2);
+    c.save();
+    c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; c.shadowBlur = 0;
+    const bx = x + 6, by = y + 6;
+    c.fillStyle = 'rgba(138,109,59,0.9)';
+    c.beginPath();
+    c.roundRect ? c.roundRect(bx, by, 22, 20, 5) : c.rect(bx, by, 22, 20);
+    c.fill();
+    c.strokeStyle = '#fff'; c.lineWidth = 1.6; c.lineCap = 'round'; c.lineJoin = 'round';
+    c.beginPath();
+    c.rect(bx + 5, by + 10, 12, 8);
+    c.stroke();
+    c.beginPath();
+    c.arc(bx + 11, by + 10, 4.5, Math.PI, 0);
+    c.stroke();
+    c.restore();
+  }
+  function drawTableStroke(c, stroke){
+    c.save();
+    c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; c.shadowBlur = 0;
+    c.strokeStyle = stroke.color; c.lineWidth = stroke.width || 1.5; c.lineCap = 'butt'; c.lineJoin = 'miter';
+    const x = Math.min(stroke.x1, stroke.x2), y = Math.min(stroke.y1, stroke.y2);
+    const w = Math.abs(stroke.x2 - stroke.x1), h = Math.abs(stroke.y2 - stroke.y1);
+    const rows = stroke.rows || 3, cols = stroke.cols || 3;
+    c.strokeRect(x, y, w, h);
+    for (let i=1; i<rows; i++){
+      const ry = y + (h/rows)*i;
+      c.beginPath(); c.moveTo(x, ry); c.lineTo(x+w, ry); c.stroke();
+    }
+    for (let j=1; j<cols; j++){
+      const rx = x + (w/cols)*j;
+      c.beginPath(); c.moveTo(rx, y); c.lineTo(rx, y+h); c.stroke();
+    }
+    c.restore();
+    drawLockBadge(c, stroke);
+  }
+
+  const imageObjCache = new Map();
+  function drawImageStroke(c, stroke, pageId){
+    let img = imageObjCache.get(stroke.src);
+    if (!img){
+      img = new Image();
+      imageObjCache.set(stroke.src, img);
+      img.onload = () => { if (pageId) redrawPage(pageId); };
+      img.src = stroke.src;
+      return; // will repaint once loaded
+    }
+    if (!img.complete) return;
+    const x = Math.min(stroke.x1, stroke.x2), y = Math.min(stroke.y1, stroke.y2);
+    const w = Math.abs(stroke.x2 - stroke.x1), h = Math.abs(stroke.y2 - stroke.y1);
+    c.save();
+    c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; c.shadowBlur = 0;
+    if (stroke.cropRect){
+      const cr = stroke.cropRect;
+      c.drawImage(img, cr.sx, cr.sy, cr.sw, cr.sh, x, y, w, h);
+    } else {
+      c.drawImage(img, x, y, w, h);
+    }
+    c.restore();
+    drawLockBadge(c, stroke);
+  }
+
+  function drawFullStroke(c, stroke, pageId){
+    if (SHAPE_TOOLS.has(stroke.tool)){ drawShapeStroke(c, stroke); return; }
+    if (stroke.tool === 'text'){ drawTextStroke(c, stroke); return; }
+    if (stroke.tool === 'table'){ drawTableStroke(c, stroke); return; }
+    if (stroke.tool === 'image'){ drawImageStroke(c, stroke, pageId); return; }
+    const pts = stroke.points;
+    if (pts.length < 1) return;
+    setupStrokeStyle(c, stroke);
+    if (pts.length === 1){
+      const p = pts[0];
+      c.beginPath();
+      c.arc(p.x, p.y, widthFor(stroke, p.pressure)/2, 0, Math.PI*2);
+      c.fill();
+      c.globalAlpha = 1; c.shadowBlur = 0;
+      return;
+    }
+    if (pts.length === 2){
+      c.beginPath();
+      c.lineWidth = widthFor(stroke, pts[1].pressure);
+      c.moveTo(pts[0].x, pts[0].y);
+      c.lineTo(pts[1].x, pts[1].y);
+      c.stroke();
+      c.globalAlpha = 1; c.shadowBlur = 0;
+      return;
+    }
+    for (let i=2; i<pts.length; i++){
+      const p1 = pts[i-2], p2 = pts[i-1], p3 = pts[i];
+      const start = mid(p1, p2);
+      const end = mid(p2, p3);
+      c.beginPath();
+      c.lineWidth = widthFor(stroke, p2.pressure);
+      c.moveTo(start.x, start.y);
+      c.quadraticCurveTo(p2.x, p2.y, end.x, end.y);
+      c.stroke();
+    }
+    const last3 = pts.slice(-3);
+    const lastMid = mid(last3[0], last3[1]);
+    c.beginPath();
+    c.lineWidth = widthFor(stroke, pts[pts.length-1].pressure);
+    c.moveTo(lastMid.x, lastMid.y);
+    c.lineTo(pts[pts.length-1].x, pts[pts.length-1].y);
+    c.stroke();
+    c.globalAlpha = 1; c.shadowBlur = 0;
+  }
+
+  const bgImageCache = new Map();
+  function drawBgImage(ctxEl, canvasEl, page, pageId){
+    if (!page.bg) return;
+    let img = bgImageCache.get(page.bg);
+    if (!img){
+      img = new Image();
+      img.onload = () => { bgImageCache.set(page.bg, img); redrawPageBg(pageId); };
+      img.src = page.bg;
+      return;
+    }
+    const w = parseFloat(canvasEl.style.width) || 0;
+    const h = parseFloat(canvasEl.style.height) || 0;
+    ctxEl.drawImage(img, 0, 0, w, h);
+  }
+  function redrawPageBg(pageId){
+    const pc = pageCanvases.get(pageId);
+    if (!pc || !activeNotebook) return;
+    const page = activeNotebook.pages[pageId];
+    if (!page) return;
+    pc.bgCtx.clearRect(0, 0, pc.bgCanvas.width, pc.bgCanvas.height);
+    drawBgImage(pc.bgCtx, pc.bgCanvas, page, pageId);
+  }
+
+  function strokeRectBounds(s){
+    return {
+      x1: Math.min(s.x1, s.x2), y1: Math.min(s.y1, s.y2),
+      x2: Math.max(s.x1, s.x2), y2: Math.max(s.y1, s.y2)
+    };
+  }
+  function eraseWithProtection(c, stroke, lockedStrokes){
+    const pts = stroke.points;
+    if (!pts || !pts.length) return;
+    let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+    pts.forEach(p => { minX=Math.min(minX,p.x); minY=Math.min(minY,p.y); maxX=Math.max(maxX,p.x); maxY=Math.max(maxY,p.y); });
+    const pad = (stroke.width || 10) + 4;
+    minX-=pad; minY-=pad; maxX+=pad; maxY+=pad;
+    const overlapping = lockedStrokes.filter(s => {
+      const b = strokeRectBounds(s);
+      return !(b.x2 < minX || b.x1 > maxX || b.y2 < minY || b.y1 > maxY);
+    });
+    if (!overlapping.length){ drawFullStroke(c, stroke); return; }
+    const t = c.getTransform();
+    const snapshots = [];
+    overlapping.forEach(s => {
+      const b = strokeRectBounds(s);
+      const ix1 = Math.max(b.x1, minX), iy1 = Math.max(b.y1, minY);
+      const ix2 = Math.min(b.x2, maxX), iy2 = Math.min(b.y2, maxY);
+      if (ix2 <= ix1 || iy2 <= iy1) return;
+      const dx = Math.round(ix1*t.a + t.e), dy = Math.round(iy1*t.d + t.f);
+      const dw = Math.round((ix2-ix1)*t.a), dh = Math.round((iy2-iy1)*t.d);
+      if (dw <= 0 || dh <= 0) return;
+      try { snapshots.push({ x: dx, y: dy, data: c.getImageData(dx, dy, dw, dh) }); }
+      catch(e){ /* ignore — protection just won't apply for this region */ }
+    });
+    drawFullStroke(c, stroke);
+    snapshots.forEach(snap => c.putImageData(snap.data, snap.x, snap.y));
+  }
+  function redrawPage(pageId){
+    const pc = pageCanvases.get(pageId);
+    if (!pc || !activeNotebook) return;
+    pc.ctx.clearRect(0, 0, pc.canvas.width, pc.canvas.height);
+    const page = activeNotebook.pages[pageId];
+    if (!page) return;
+    const lockedProtected = page.strokes.filter(s => (s.tool === 'image' || s.tool === 'table') && s.locked);
+    for (const stroke of page.strokes){
+      if (stroke.tool === 'eraser' && lockedProtected.length){
+        eraseWithProtection(pc.ctx, stroke, lockedProtected);
+      } else {
+        drawFullStroke(pc.ctx, stroke, pageId);
+      }
+    }
+  }
+
+  // ---- Per-page template background (ruled/grid/dot/blank), applied to the page frame itself ----
+  function getEffectiveTemplateFor(page){
+    if (page.tmplOverride) return page.tmplOverride;
+    return {
+      bgColor: activeNotebook.bgColor || '#f6f3ec',
+      template: activeNotebook.template || 'ruled',
+      spacing: activeNotebook.spacingPx || 36
+    };
+  }
+
+  function applyFrameBackground(frame, page){
+    if (page.bg){
+      // Imported PDF page: the image itself is the page. No paper pattern behind it.
+      frame.style.backgroundImage = 'none';
+      frame.style.backgroundColor = 'transparent';
+      frame.classList.add('no-margin');
+      return;
+    }
+    const eff = getEffectiveTemplateFor(page);
+    const spacing = eff.spacing || 36;
+    const bg = eff.bgColor || '#f6f3ec';
+    if (eff.template === 'grid'){
+      frame.style.backgroundImage = `linear-gradient(var(--paper-line) 1px, transparent 1px), linear-gradient(90deg, var(--paper-line) 1px, transparent 1px)`;
+      frame.style.backgroundSize = `${spacing}px ${spacing}px`;
+      frame.style.backgroundColor = bg;
+      frame.classList.add('no-margin');
+    } else if (eff.template === 'dot'){
+      frame.style.backgroundImage = `radial-gradient(var(--paper-line) 1.3px, transparent 1.6px)`;
+      frame.style.backgroundSize = `${spacing}px ${spacing}px`;
+      frame.style.backgroundColor = bg;
+      frame.classList.add('no-margin');
+    } else if (eff.template === 'blank'){
+      frame.style.backgroundImage = 'none';
+      frame.style.backgroundColor = bg;
+      frame.classList.add('no-margin');
+    } else {
+      frame.style.backgroundImage = `repeating-linear-gradient(${bg}, ${bg} ${spacing-1}px, var(--paper-line) ${spacing}px)`;
+      frame.style.backgroundSize = 'auto';
+      frame.classList.remove('no-margin');
+    }
+  }
+
+  // ---- Touch-action: only 'scroll' mode hands single-finger touch to native scrolling.
+  // 'draw' and 'ignored' both keep touch-action:none so our JS (which can tell a stylus
+  // tip apart from a finger) stays in control rather than the browser's native gesture
+  // recognizer grabbing the touch before we get a chance to check.
+  function currentTouchAction(){
+    return (data.settings.singleFinger === 'scroll') ? 'pan-y' : 'none';
+  }
+  function refreshTouchAction(){
+    const ta = currentTouchAction();
+    pageCanvases.forEach(pc => { pc.canvas.style.touchAction = ta; });
+  }
+
+  // Many stylus/digitizer setups (especially on Android) report pointerType 'touch'
+  // instead of 'pen'. A stylus tip has a much smaller contact patch than a fingertip,
+  // so we use that to treat it as a pen even when the browser mislabels it — this is
+  // what keeps the stylus working when "single finger: ignored" is selected.
+  function isStylusLike(e){
+    if (e.pointerType === 'pen') return true;
+    if (e.pointerType === 'touch' && e.width && e.height){
+      return Math.max(e.width, e.height) < 12;
+    }
+    return false;
+  }
+
+  function createPageFrame(pageId){
+    const page = activeNotebook.pages[pageId];
+    const size = pageSizeFor(page, activeNotebook);
+    const frame = document.createElement('div');
+    frame.className = 'pageFrame';
+    frame.dataset.pageId = pageId;
+    frame.style.width = size.width + 'px';
+    frame.style.height = size.height + 'px';
+
+    // bgEl holds the imported PDF/image background; canvasEl holds ink. Keeping them on separate
+    // canvases means the eraser (which does destination-out compositing on canvasEl only) can
+    // never physically remove background pixels — there's nothing to protect, they're just not
+    // on the same layer.
+    const bgEl = document.createElement('canvas');
+    const canvasEl = document.createElement('canvas');
+    const laserEl = document.createElement('canvas');
+    laserEl.className = 'laserLayer';
+    frame.appendChild(bgEl);
+    frame.appendChild(canvasEl);
+    frame.appendChild(laserEl);
+
+    [bgEl, canvasEl, laserEl].forEach(c => {
+      c.width = size.width * dpr;
+      c.height = size.height * dpr;
+      c.style.width = size.width + 'px';
+      c.style.height = size.height + 'px';
+    });
+    canvasEl.style.touchAction = currentTouchAction();
+    bgEl.style.pointerEvents = 'none';
+    const bgCtx = bgEl.getContext('2d');
+    const cctx = canvasEl.getContext('2d');
+    const lctx = laserEl.getContext('2d');
+    bgCtx.setTransform(dpr,0,0,dpr,0,0);
+    cctx.setTransform(dpr,0,0,dpr,0,0);
+    lctx.setTransform(dpr,0,0,dpr,0,0);
+
+    pageCanvases.set(pageId, { frame, bgCanvas: bgEl, bgCtx, canvas: canvasEl, ctx: cctx, laserCanvas: laserEl, laserCtx: lctx });
+
+    applyFrameBackground(frame, page);
+    canvasEl.addEventListener('pointerdown', (e) => handlePointerDown(e, pageId));
+    canvasEl.addEventListener('pointermove', (e) => handlePointerMove(e, pageId));
+
+    redrawPageBg(pageId);
+    redrawPage(pageId);
+    return frame;
+  }
+
+  function renderPageStack(){
+    pageCanvases.clear();
+    stage.innerHTML = '';
+    activeNotebook.pageOrder.forEach(pid => {
+      stage.appendChild(createPageFrame(pid));
+    });
+    setupPageObserver();
+  }
+
+  function setupPageObserver(){
+    if (pageObserver) pageObserver.disconnect();
+    pageObserver = new IntersectionObserver((entries) => {
+      let best = null, bestRatio = 0;
+      entries.forEach(en => {
+        if (en.isIntersecting && en.intersectionRatio > bestRatio){ bestRatio = en.intersectionRatio; best = en.target.dataset.pageId; }
+      });
+      if (best && best !== currentId){
+        currentId = best;
+        updateActivePageUI();
+      }
+    }, { root: wrap, threshold: [0.1, 0.25, 0.5, 0.75, 0.9] });
+    pageCanvases.forEach(pc => pageObserver.observe(pc.frame));
+  }
+
+  function updateActivePageUI(){
+    if (!currentId || !activeNotebook || !activeNotebook.pages[currentId]) return;
+    const page = activeNotebook.pages[currentId];
+    if (!page.redo) page.redo = [];
+    titleEl.value = page.title;
+    pageCounterEl.textContent = `${activeNotebook.pageOrder.indexOf(currentId)+1}/${activeNotebook.pageOrder.length}`;
+  }
+
+  function scrollToPage(id){
+    const pc = pageCanvases.get(id);
+    if (pc) pc.frame.scrollIntoView({ behavior:'smooth', block:'start' });
+    currentId = id;
+    updateActivePageUI();
+  }
+
+  let activePointerId = null;
+  let activePointerType = null;
+  let activeIsStylus = false;
+  let activePageId = null;
+  let lastPenTime = 0;
+  let lastPressure = 0.5;
+  const PEN_GRACE_MS = 700;
+
+  // ---- Input smoothing: a light exponential low-pass filter on incoming points, applied only to
+  // freehand ink (not shapes/laser/lasso, which need precise, unlagged coordinates). This is what
+  // takes the small jitter out of hand-drawn strokes and makes writing look noticeably smoother
+  // without introducing perceptible lag.
+  let smoothPrev = null;
+  function smoothPoint(raw){
+    if (!smoothPrev){ smoothPrev = { x: raw.x, y: raw.y }; return raw; }
+    const alpha = 0.45; // lower = smoother but laggier; 0.45 keeps it responsive
+    smoothPrev = {
+      x: smoothPrev.x + (raw.x - smoothPrev.x) * alpha,
+      y: smoothPrev.y + (raw.y - smoothPrev.y) * alpha
+    };
+    return { x: smoothPrev.x, y: smoothPrev.y, pressure: raw.pressure };
+  }
+
+  // ---- Lasso: freehand-encircle to select existing strokes, then drag the selection to move it ----
+  let lassoMode = null; // null | 'drawing' | 'dragging'
+  let lassoPath = [];
+  let lassoSelection = [];
+  let lassoSelPageId = null;
+  let lassoDragLast = null;
+
+  function strokeRefPoints(s){
+    if (s.points && s.points.length) return s.points;
+    if (s.x1 !== undefined) return [{x:s.x1,y:s.y1},{x:s.x2,y:s.y2}];
+    if (s.x !== undefined){
+      const w = s.w || 40, h = s.h || 40;
+      return [{x:s.x-w/2,y:s.y-h/2},{x:s.x+w/2,y:s.y+h/2}];
+    }
+    return [{x:0,y:0}];
+  }
+  function strokeCenter(s){
+    const pts = strokeRefPoints(s);
+    let sx=0, sy=0; pts.forEach(p=>{sx+=p.x; sy+=p.y;});
+    return { x: sx/pts.length, y: sy/pts.length };
+  }
+  function translateStroke(s, dx, dy){
+    if (s.points){ s.points.forEach(p => { p.x += dx; p.y += dy; }); }
+    else if (s.x1 !== undefined){ s.x1+=dx; s.y1+=dy; s.x2+=dx; s.y2+=dy; }
+    else if (s.x !== undefined){ s.x += dx; s.y += dy; }
+  }
+  function duplicateStroke(s){
+    const clone = Object.assign({}, s);
+    if (s.points) clone.points = s.points.map(p => ({...p}));
+    if (s.cropRect) clone.cropRect = {...s.cropRect};
+    translateStroke(clone, 20, 20); // small offset so the copy is visibly separate from the original
+    return clone;
+  }
+  function pointInPolygon(pt, poly){
+    let inside = false;
+    for (let i=0, j=poly.length-1; i<poly.length; j=i++){
+      const xi=poly[i].x, yi=poly[i].y, xj=poly[j].x, yj=poly[j].y;
+      const hit = ((yi>pt.y) !== (yj>pt.y)) && (pt.x < (xj-xi)*(pt.y-yi)/((yj-yi)||0.0001)+xi);
+      if (hit) inside = !inside;
+    }
+    return inside;
+  }
+  function selectionBBox(page){
+    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+    lassoSelection.forEach(i => {
+      const s = page.strokes[i];
+      if (!s) return;
+      strokeRefPoints(s).forEach(p => { minX=Math.min(minX,p.x); minY=Math.min(minY,p.y); maxX=Math.max(maxX,p.x); maxY=Math.max(maxY,p.y); });
+    });
+    return { x:minX, y:minY, w:maxX-minX, h:maxY-minY };
+  }
+  function updateLassoDeleteBtnPosition(){
+    const bar = document.getElementById('lassoActionBar');
+    const cropBtn = document.getElementById('lassoCropBtn');
+    const lockBtn = document.getElementById('lassoLockBtn');
+    const deleteBtn = document.getElementById('lassoDeleteBtn');
+    if (lassoMode === 'drawing' || !lassoSelection.length || !lassoSelPageId){
+      bar.classList.add('hidden');
+      return;
+    }
+    const pc = pageCanvases.get(lassoSelPageId);
+    const page = activeNotebook && activeNotebook.pages[lassoSelPageId];
+    if (!pc || !page){ bar.classList.add('hidden'); return; }
+    const selStrokes = lassoSelection.map(i => page.strokes[i]).filter(Boolean);
+    const single = selStrokes.length === 1 ? selStrokes[0] : null;
+    const isSingleImage = single && single.tool === 'image' && !single.locked;
+    const isSingleLockable = single && (single.tool === 'image' || single.tool === 'table');
+    cropBtn.classList.toggle('hidden', !isSingleImage);
+    lockBtn.classList.toggle('hidden', !isSingleLockable);
+    if (isSingleLockable){
+      const locked = !!single.locked;
+      lockBtn.title = locked ? 'Unlock' : 'Lock';
+      document.getElementById('lassoLockIcon').innerHTML = locked
+        ? '<rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 7.4-2"/>'
+        : '<rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>';
+    }
+    const allLocked = selStrokes.length > 0 && selStrokes.every(s => s.locked);
+    deleteBtn.classList.toggle('hidden', allLocked);
+    const b = selectionBBox(page);
+    const rect = pc.canvas.getBoundingClientRect();
+    bar.style.left = (rect.left + (b.x + b.w) * zoom + 4) + 'px';
+    bar.style.top = (rect.top + b.y * zoom - 40) + 'px';
+    bar.classList.remove('hidden');
+  }
+  function drawLassoOverlay(pc){
+    pc.laserCtx.clearRect(0,0,pc.laserCanvas.width,pc.laserCanvas.height);
+    const c = pc.laserCtx;
+    if (lassoMode === 'drawing' && lassoPath.length > 1){
+      c.save();
+      c.strokeStyle = '#6b7fd7'; c.lineWidth = 1.5; c.setLineDash([6,4]);
+      c.beginPath();
+      c.moveTo(lassoPath[0].x, lassoPath[0].y);
+      for (let i=1;i<lassoPath.length;i++) c.lineTo(lassoPath[i].x, lassoPath[i].y);
+      c.stroke();
+      c.restore();
+    } else if (lassoSelection.length && lassoSelPageId){
+      const page = activeNotebook.pages[lassoSelPageId];
+      if (page){
+        const b = selectionBBox(page);
+        c.save();
+        const anyLocked = lassoSelection.some(i => page.strokes[i] && page.strokes[i].locked);
+        c.strokeStyle = anyLocked ? '#8a6d3b' : '#6b7fd7'; c.lineWidth = 1.5; c.setLineDash([6,4]);
+        c.strokeRect(b.x-6, b.y-6, b.w+12, b.h+12);
+        c.restore();
+      }
+    }
+    updateLassoDeleteBtnPosition();
+  }
+  function clearLassoSelection(){
+    if (!lassoSelection.length && lassoMode !== 'drawing') return;
+    const pid = lassoSelPageId;
+    lassoSelection = []; lassoSelPageId = null; lassoMode = null; lassoPath = [];
+    const pc = pid ? pageCanvases.get(pid) : null;
+    if (pc) pc.laserCtx.clearRect(0,0,pc.laserCanvas.width,pc.laserCanvas.height);
+    document.getElementById('lassoActionBar').classList.add('hidden');
+  }
+  function handleLassoDown(pageId, pos){
+    if (lassoSelection.length && lassoSelPageId === pageId){
+      const page = activeNotebook.pages[pageId];
+      const b = selectionBBox(page);
+      if (pos.x >= b.x-6 && pos.x <= b.x+b.w+6 && pos.y >= b.y-6 && pos.y <= b.y+b.h+6){
+        lassoMode = 'dragging';
+        lassoDragLast = pos;
+        return;
+      }
+      clearLassoSelection();
+    }
+    lassoMode = 'drawing';
+    lassoPath = [pos];
+  }
+  function handleLassoMove(pageId, pos){
+    const pc = pageCanvases.get(pageId);
+    if (!pc) return;
+    if (lassoMode === 'dragging'){
+      const page = activeNotebook.pages[pageId];
+      if (!page) return;
+      const dx = pos.x - lassoDragLast.x, dy = pos.y - lassoDragLast.y;
+      lassoDragLast = pos;
+      lassoSelection.forEach(i => { const s = page.strokes[i]; if (s && !s.locked) translateStroke(s, dx, dy); });
+      redrawPage(pageId);
+      drawLassoOverlay(pc);
+      return;
+    }
+    if (lassoMode === 'drawing'){
+      lassoPath.push(pos);
+      drawLassoOverlay(pc);
+    }
+  }
+  function handleLassoUp(pageId){
+    const pc = pageCanvases.get(pageId);
+    const page = activeNotebook.pages[pageId];
+    if (lassoMode === 'dragging'){
+      lassoMode = null;
+      if (page){ page.redo = []; scheduleSave(); }
+      if (pc) drawLassoOverlay(pc);
+      return;
+    }
+    if (lassoMode === 'drawing'){
+      let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+      lassoPath.forEach(p => { minX=Math.min(minX,p.x); minY=Math.min(minY,p.y); maxX=Math.max(maxX,p.x); maxY=Math.max(maxY,p.y); });
+      const tiny = (maxX-minX) < 6 && (maxY-minY) < 6;
+      if (tiny || !page){
+        // A plain tap (not a drag) directly on an image or table selects it — no need to lasso it.
+        const hitIdx = page ? hitTestObjectAt(page, lassoPath[0]) : -1;
+        if (hitIdx >= 0){
+          lassoMode = null; lassoPath = [];
+          lassoSelection = [hitIdx];
+          lassoSelPageId = pageId;
+          if (pc) drawLassoOverlay(pc);
+          return;
+        }
+        clearLassoSelection();
+        return;
+      }
+      const matches = [];
+      page.strokes.forEach((s, i) => { if (pointInPolygon(strokeCenter(s), lassoPath)) matches.push(i); });
+      lassoMode = null; lassoPath = [];
+      lassoSelection = matches;
+      lassoSelPageId = pageId;
+      if (pc) drawLassoOverlay(pc);
+    }
+  }
+  function hitTestObjectAt(page, pos){
+    for (let i = page.strokes.length - 1; i >= 0; i--){
+      const s = page.strokes[i];
+      if (!s || (s.tool !== 'image' && s.tool !== 'table')) continue;
+      const x1 = Math.min(s.x1, s.x2), x2 = Math.max(s.x1, s.x2);
+      const y1 = Math.min(s.y1, s.y2), y2 = Math.max(s.y1, s.y2);
+      if (pos.x >= x1 && pos.x <= x2 && pos.y >= y1 && pos.y <= y2) return i;
+    }
+    return -1;
+  }
+
+  // ---- Tap-placed objects: text — stamps at the tap point ----
+  // ---- Image crop: drag a box inside the image's current bounds to crop to that region ----
+  let cropState = null; // { pageId, strokeIndex, imgBounds:{x1,y1,x2,y2}, drag:{x1,y1,x2,y2} }
+  function clampToBounds(pos, b){
+    return {
+      x: Math.max(Math.min(b.x1,b.x2), Math.min(Math.max(b.x1,b.x2), pos.x)),
+      y: Math.max(Math.min(b.y1,b.y2), Math.min(Math.max(b.y1,b.y2), pos.y))
+    };
+  }
+  function startCropMode(pageId, strokeIndex){
+    const page = activeNotebook && activeNotebook.pages[pageId];
+    const s = page && page.strokes[strokeIndex];
+    if (!s || s.tool !== 'image') return;
+    clearLassoSelection();
+    cropState = { pageId, strokeIndex, imgBounds: { x1:s.x1, y1:s.y1, x2:s.x2, y2:s.y2 }, drag: null };
+    selectTool('cropImage');
+    const pc = pageCanvases.get(pageId);
+    if (pc) drawCropOverlay(pc);
+  }
+  function drawCropOverlay(pc){
+    pc.laserCtx.clearRect(0,0,pc.laserCanvas.width,pc.laserCanvas.height);
+    if (!cropState) return;
+    const c = pc.laserCtx;
+    const b = cropState.imgBounds;
+    c.save();
+    c.strokeStyle = 'rgba(107,127,215,0.5)'; c.lineWidth = 1.5; c.setLineDash([4,3]);
+    c.strokeRect(Math.min(b.x1,b.x2), Math.min(b.y1,b.y2), Math.abs(b.x2-b.x1), Math.abs(b.y2-b.y1));
+    if (cropState.drag){
+      const d = cropState.drag;
+      c.strokeStyle = '#2f7a4f'; c.setLineDash([6,4]); c.lineWidth = 2;
+      c.strokeRect(Math.min(d.x1,d.x2), Math.min(d.y1,d.y2), Math.abs(d.x2-d.x1), Math.abs(d.y2-d.y1));
+    }
+    c.restore();
+  }
+  function cancelCropMode(){
+    const pageId = cropState && cropState.pageId;
+    cropState = null;
+    const pc = pageId ? pageCanvases.get(pageId) : null;
+    if (pc) pc.laserCtx.clearRect(0,0,pc.laserCanvas.width,pc.laserCanvas.height);
+  }
+  function finalizeCrop(){
+    const { pageId, strokeIndex, imgBounds, drag } = cropState || {};
+    const page = activeNotebook && activeNotebook.pages[pageId];
+    const s = page && page.strokes[strokeIndex];
+    const pc = pageCanvases.get(pageId);
+    if (!s || !drag){ cancelCropMode(); selectTool('lasso'); return; }
+    const dx1 = Math.min(drag.x1, drag.x2), dy1 = Math.min(drag.y1, drag.y2);
+    const dx2 = Math.max(drag.x1, drag.x2), dy2 = Math.max(drag.y1, drag.y2);
+    const iw = Math.abs(imgBounds.x2 - imgBounds.x1), ih = Math.abs(imgBounds.y2 - imgBounds.y1);
+    const img = imageObjCache.get(s.src);
+    if (dx2-dx1 < 8 || dy2-dy1 < 8 || iw <= 0 || ih <= 0 || !img || !img.complete){
+      cropState = null;
+      if (pc) pc.laserCtx.clearRect(0,0,pc.laserCanvas.width,pc.laserCanvas.height);
+      selectTool('lasso'); lassoSelection = [strokeIndex]; lassoSelPageId = pageId;
+      if (pc) drawLassoOverlay(pc);
+      return;
+    }
+    const ix1 = Math.min(imgBounds.x1, imgBounds.x2), iy1 = Math.min(imgBounds.y1, imgBounds.y2);
+    const fx = (dx1 - ix1) / iw, fy = (dy1 - iy1) / ih;
+    const fw = (dx2 - dx1) / iw, fh = (dy2 - dy1) / ih;
+    const existing = s.cropRect || { sx:0, sy:0, sw: img.naturalWidth, sh: img.naturalHeight };
+    s.cropRect = {
+      sx: existing.sx + fx * existing.sw,
+      sy: existing.sy + fy * existing.sh,
+      sw: fw * existing.sw,
+      sh: fh * existing.sh
+    };
+    s.x1 = dx1; s.y1 = dy1; s.x2 = dx2; s.y2 = dy2;
+    page.redo = [];
+    scheduleSave();
+    cropState = null;
+    redrawPage(pageId);
+    selectTool('lasso'); lassoSelection = [strokeIndex]; lassoSelPageId = pageId;
+    if (pc) drawLassoOverlay(pc);
+  }
+
+  function getPos(e, canvasEl){
+    const rect = canvasEl.getBoundingClientRect();
+    let pressure;
+    if (e.pointerType === 'pen'){
+      const raw = e.pressure > 0 ? e.pressure : lastPressure;
+      pressure = lastPressure + (raw - lastPressure) * 0.6;
+      lastPressure = pressure;
+    } else if (e.pointerType === 'mouse'){
+      pressure = 0.55;
+    } else {
+      pressure = 0.75;
+    }
+    return { x: (e.clientX - rect.left) / zoom, y: (e.clientY - rect.top) / zoom, pressure };
+  }
+
+  function handlePointerDown(e, pageId){
+    if (drawing || !activeNotebook) return;
+    if (pinching) return;
+    const stylus = isStylusLike(e);
+    if (e.pointerType === 'touch' && !stylus){
+      const mode = data.settings.singleFinger || 'draw';
+      if (mode !== 'draw') return; // 'ignored' or 'scroll' — never draws; native/blocked scroll handles it
+      if (data.settings.palmRejection){
+        if (activeIsStylus) return;
+        if (Date.now() - lastPenTime < PEN_GRACE_MS) return;
+        if (e.isPrimary === false) return;
+      }
+    }
+    if (stylus){ lastPenTime = Date.now(); lastPressure = 0.5; }
+    const pc = pageCanvases.get(pageId);
+    if (!pc) return;
+    const pos = getPos(e, pc.canvas);
+    if (tool === 'cropImage'){
+      if (!cropState) return;
+      pc.canvas.setPointerCapture(e.pointerId);
+      drawing = true;
+      activePointerId = e.pointerId; activePointerType = e.pointerType; activeIsStylus = stylus; activePageId = pageId;
+      currentId = pageId; updateActivePageUI();
+      currentStroke = null;
+      const clamped = clampToBounds(pos, cropState.imgBounds);
+      cropState.drag = { x1: clamped.x, y1: clamped.y, x2: clamped.x, y2: clamped.y };
+      drawCropOverlay(pc);
+      return;
+    }
+    if (tool === 'image' && !pendingImageSrc){
+      imageFileInput.click(); // no photo picked yet — open the picker instead of dragging
+      return;
+    }
+    pc.canvas.setPointerCapture(e.pointerId);
+    drawing = true;
+    activePointerId = e.pointerId;
+    activePointerType = e.pointerType;
+    activeIsStylus = stylus;
+    activePageId = pageId;
+    currentId = pageId;
+    updateActivePageUI();
+    if (tool === 'lasso'){
+      currentStroke = null;
+      handleLassoDown(pageId, pos);
+      return;
+    }
+    if (tool === 'table'){
+      currentStroke = { tool, color, width, rows: lastTableDims.rows, cols: lastTableDims.cols, x1: pos.x, y1: pos.y, x2: pos.x, y2: pos.y };
+    } else if (tool === 'image'){
+      currentStroke = { tool, src: pendingImageSrc, x1: pos.x, y1: pos.y, x2: pos.x, y2: pos.y };
+    } else if (SHAPE_TOOLS.has(tool)){
+      currentStroke = { tool, color, width, x1: pos.x, y1: pos.y, x2: pos.x, y2: pos.y };
+    } else {
+      smoothPrev = null; // fresh start for the jitter filter on this new stroke
+      currentStroke = { tool, color, width: (tool === 'eraser' ? eraserWidth : width), points: [pos] };
+    }
+  }
+
+  function handlePointerMove(e, pageId){
+    if (!drawing || e.pointerId !== activePointerId || pageId !== activePageId) return;
+    if (e.pointerType === 'pen') lastPenTime = Date.now();
+    const pc = pageCanvases.get(pageId);
+    if (!pc) return;
+    if (tool === 'lasso'){
+      handleLassoMove(pageId, getPos(e, pc.canvas));
+      return;
+    }
+    if (tool === 'cropImage'){
+      if (!cropState) return;
+      const clamped = clampToBounds(getPos(e, pc.canvas), cropState.imgBounds);
+      cropState.drag.x2 = clamped.x;
+      cropState.drag.y2 = clamped.y;
+      drawCropOverlay(pc);
+      return;
+    }
+    if (DRAG_TOOLS.has(currentStroke.tool)){
+      // Shapes/table/image redraw from scratch each move (the whole box can change, not just
+      // append), so repaint the committed strokes first, then draw the live preview on top.
+      const pos = getPos(e, pc.canvas);
+      currentStroke.x2 = pos.x;
+      currentStroke.y2 = pos.y;
+      redrawPage(pageId);
+      drawFullStroke(pc.ctx, currentStroke);
+      return;
+    }
+    const targetCtx = tool === 'laser' ? pc.laserCtx : pc.ctx;
+    const pts = (e.getCoalescedEvents && e.getCoalescedEvents()) || [e];
+    for (const ev of pts){
+      const raw = getPos(ev, pc.canvas);
+      currentStroke.points.push(tool === 'laser' ? raw : smoothPoint(raw));
+      drawIncrementalSegment(targetCtx, currentStroke);
+    }
+  }
+
+  function handlePointerUp(e){
+    if (!drawing || e.pointerId !== activePointerId) return;
+    if (activeIsStylus) lastPenTime = Date.now();
+    drawing = false;
+    const pageId = activePageId;
+    activePointerId = null; activePointerType = null; activeIsStylus = false; activePageId = null;
+    if (tool === 'lasso'){
+      handleLassoUp(pageId);
+      return;
+    }
+    if (tool === 'cropImage'){
+      finalizeCrop();
+      return;
+    }
+    if (currentStroke && DRAG_TOOLS.has(currentStroke.tool)){
+      const page = activeNotebook.pages[pageId];
+      if (page){
+        const moved = Math.hypot(currentStroke.x2 - currentStroke.x1, currentStroke.y2 - currentStroke.y1) > 2;
+        if (moved){
+          page.strokes.push(currentStroke);
+          page.redo = [];
+          scheduleSave();
+          if (currentStroke.tool === 'image'){
+            const placedIndex = page.strokes.length - 1;
+            pendingImageSrc = null;
+            selectTool('lasso');
+            lassoSelection = [placedIndex];
+            lassoSelPageId = pageId;
+            const pc = pageCanvases.get(pageId);
+            if (pc) drawLassoOverlay(pc);
+          }
+        }
+        redrawPage(pageId);
+      }
+    } else if (currentStroke && currentStroke.points.length){
+      if (currentStroke.tool === 'laser'){
+        const pc = pageCanvases.get(pageId);
+        clearTimeout(laserTimer);
+        laserTimer = setTimeout(() => { if (pc) pc.laserCtx.clearRect(0,0,pc.laserCanvas.width,pc.laserCanvas.height); }, 900);
+      } else {
+        const page = activeNotebook.pages[pageId];
+        if (page){
+          page.strokes.push(currentStroke);
+          page.redo = [];
+          scheduleSave();
+        }
+      }
+    }
+    currentStroke = null;
+  }
+
+  function cancelActiveStroke(){
+    if (!drawing) return;
+    const pageId = activePageId;
+    drawing = false; activePointerId = null; activePointerType = null; activeIsStylus = false; activePageId = null;
+    currentStroke = null;
+    if (lassoMode === 'drawing') { lassoMode = null; lassoPath = []; }
+    if (cropState) cropState.drag = null;
+    if (pageId) {
+      redrawPage(pageId);
+      const pc = pageCanvases.get(pageId);
+      if (pc) { drawLassoOverlay(pc); if (tool === 'cropImage') drawCropOverlay(pc); }
+    }
+  }
+
+  window.addEventListener('pointerup', handlePointerUp);
+  window.addEventListener('pointercancel', handlePointerUp);
+
+  // ---- Two-finger gestures: pinch-zoom (anchored at the pinch point), or two-finger scroll ----
+  let pinching = false;
+  let pinchStartDist = 0;
+  let pinchStartZoom = 1;
+  let twoFingerMode = null;
+  let twoFingerLastMid = null;
+
+  function distBetween(t1, t2){ return Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY); }
+  function midTouch(t1, t2){ return { x:(t1.clientX+t2.clientX)/2, y:(t1.clientY+t2.clientY)/2 }; }
+
+  wrap.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2){
+      cancelActiveStroke();
+      const mode = zoomLocked ? 'scroll' : (data.settings.doubleFinger || 'zoompan');
+      twoFingerMode = mode;
+      twoFingerLastMid = midTouch(e.touches[0], e.touches[1]);
+      if (mode === 'ignored'){ e.preventDefault(); return; }
+      e.preventDefault();
+      pinchStartDist = distBetween(e.touches[0], e.touches[1]);
+      pinchStartZoom = zoom;
+      pinching = (mode === 'zoompan');
+    }
+  }, {passive:false});
+
+  wrap.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 2 && twoFingerMode && twoFingerMode !== 'ignored'){
+      e.preventDefault();
+      const m = midTouch(e.touches[0], e.touches[1]);
+      const d = twoFingerMode === 'zoompan' ? distBetween(e.touches[0], e.touches[1]) : 0;
+      pendingTwoFingerMove = { mode: twoFingerMode, m, d };
+      scheduleTwoFingerFrame();
+    }
+  }, {passive:false});
+
+  let pendingTwoFingerMove = null;
+  let twoFingerFrameQueued = false;
+  function scheduleTwoFingerFrame(){
+    if (twoFingerFrameQueued) return;
+    twoFingerFrameQueued = true;
+    requestAnimationFrame(() => {
+      twoFingerFrameQueued = false;
+      const move = pendingTwoFingerMove;
+      pendingTwoFingerMove = null;
+      if (!move) return;
+      if (move.mode === 'zoompan'){
+        const newZoom = Math.min(4, Math.max(0.5, pinchStartZoom * (move.d / pinchStartDist)));
+        setZoomAnchored(newZoom, move.m.x, move.m.y);
+      } else if (move.mode === 'scroll' && twoFingerLastMid){
+        wrap.scrollLeft -= (move.m.x - twoFingerLastMid.x);
+        wrap.scrollTop -= (move.m.y - twoFingerLastMid.y);
+      }
+      twoFingerLastMid = move.m;
+    });
+  }
+
+  wrap.addEventListener('touchend', (e) => {
+    if (e.touches.length < 2){ pinching = false; twoFingerMode = null; twoFingerLastMid = null; pendingTwoFingerMove = null; }
+  }, {passive:true});
+
+  wrap.addEventListener('wheel', (e) => {
+    if (!e.ctrlKey || zoomLocked) return;
+    e.preventDefault();
+    const newZoom = Math.min(4, Math.max(0.5, zoom - e.deltaY * 0.01));
+    setZoomAnchored(newZoom, e.clientX, e.clientY);
+  }, {passive:false});
+
+  function applyZoom(){
+    stage.style.transform = `scale(${zoom})`;
+    zoomLabelEl.textContent = Math.round(zoom*100) + '%';
+  }
+
+  // Changes zoom while keeping whatever content was under (anchorClientX, anchorClientY) — or the
+  // viewport center by default — visually fixed in place. Rather than assuming a particular
+  // transform-origin and doing corner-relative math (which breaks the moment the origin or the
+  // centering strategy changes), this measures the stage's actual rendered box before and after
+  // the zoom change and nudges scroll by the difference. That keeps it correct no matter how the
+  // stage is centered, and is what actually prevents content from drifting to a corner.
+  function setZoomAnchored(newZoom, anchorClientX, anchorClientY){
+    newZoom = Math.min(4, Math.max(0.5, newZoom));
+    const wrapRect = wrap.getBoundingClientRect();
+    const ax = (anchorClientX !== undefined) ? anchorClientX : (wrapRect.left + wrapRect.width/2);
+    const ay = (anchorClientY !== undefined) ? anchorClientY : (wrapRect.top + wrapRect.height/2);
+    const stageRectBefore = stage.getBoundingClientRect();
+    // The point in the stage's own unscaled coordinate space that currently sits under the anchor.
+    const contentX = (ax - stageRectBefore.left) / zoom;
+    const contentY = (ay - stageRectBefore.top) / zoom;
+    zoom = newZoom;
+    applyZoom();
+    const stageRectAfter = stage.getBoundingClientRect();
+    const newScreenX = stageRectAfter.left + contentX * zoom;
+    const newScreenY = stageRectAfter.top + contentY * zoom;
+    wrap.scrollLeft += (newScreenX - ax);
+    wrap.scrollTop += (newScreenY - ay);
+    if (wrap.scrollWidth <= wrap.clientWidth + 1) wrap.scrollLeft = 0;
+    if (wrap.scrollHeight <= wrap.clientHeight + 1) wrap.scrollTop = 0;
+  }
+  function setZoom(z){ setZoomAnchored(z); } // anchored at viewport center — used by the zoom menu
+
+  // ---- Zoom menu: presets, zoom-to-fit, lock ----
+  const zoomMenu = document.getElementById('zoomMenu');
+  zoomMenu.addEventListener('click', (e) => e.stopPropagation());
+  const ZOOM_PRESETS = [50, 100, 200, 300, 400];
+  function renderZoomMenu(){
+    const currentPct = Math.round(zoom * 100);
+    zoomMenu.innerHTML = ZOOM_PRESETS.map(p => `
+      <div class="zRow" data-p="${p}">${p}%${p === currentPct ? '<span class="check">✓</span>' : ''}</div>
+    `).join('') + `
+      <div class="zDivider"></div>
+      <div class="zRow action" id="zoomFit">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+        Zoom to fit content
+      </div>
+      <div class="zRow action ${zoomLocked ? 'locked' : ''}" id="zoomLockRow">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+        ${zoomLocked ? 'Unlock zoom' : 'Lock zoom'}
+      </div>
+    `;
+    zoomMenu.querySelectorAll('.zRow[data-p]').forEach(row => {
+      row.addEventListener('click', () => { setZoom(parseInt(row.dataset.p) / 100); zoomMenu.classList.add('hidden'); });
+    });
+    zoomMenu.querySelector('#zoomFit').addEventListener('click', () => {
+      const pc = pageCanvases.get(currentId);
+      if (pc){
+        const wrapRect = wrap.getBoundingClientRect();
+        const pageW = parseFloat(pc.canvas.style.width) || wrapRect.width;
+        const fitZoom = Math.min(4, Math.max(0.5, (wrapRect.width - 40) / pageW));
+        setZoom(fitZoom);
+        pc.frame.scrollIntoView({ behavior:'smooth', block:'start' });
+      }
+      zoomMenu.classList.add('hidden');
+    });
+    zoomMenu.querySelector('#zoomLockRow').addEventListener('click', () => {
+      zoomLocked = !zoomLocked;
+      renderZoomMenu();
+    });
+  }
+  document.getElementById('zoomBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    renderZoomMenu();
+    positionPopoverAbove(zoomMenu, e.currentTarget);
+    zoomMenu.classList.toggle('hidden');
+  });
+  function positionPopoverAbove(popover, btn){
+    const r = btn.getBoundingClientRect();
+    popover.style.left = Math.max(8, r.left) + 'px';
+    popover.style.bottom = (window.innerHeight - r.top + 6) + 'px';
+    popover.style.top = 'auto';
+  }
+  document.addEventListener('click', () => zoomMenu.classList.add('hidden'));
+
+  // ---- Tool + style wiring ----
+  const toolBtns = { pen: document.getElementById('penTool'), pencil: document.getElementById('pencilTool'),
+    highlighter: document.getElementById('highlighterTool'), eraser: document.getElementById('eraserTool'),
+    lasso: document.getElementById('lassoTool'),
+    laser: document.getElementById('laserTool') };
+  function selectTool(t){
+    tool = t;
+    Object.entries(toolBtns).forEach(([k,btn]) => btn.classList.toggle('active', k === t));
+    shapeToolBtn.classList.toggle('active', SHAPE_TOOLS.has(t));
+    imageToolBtn.classList.toggle('active', t === 'image');
+    tableToolBtn.classList.toggle('active', t === 'table');
+    if (t !== 'lasso') clearLassoSelection();
+    renderToolOptionsRow();
+  }
+  Object.entries(toolBtns).forEach(([k, btn]) => btn.addEventListener('click', () => selectTool(k)));
+
+  // ---- Shapes tool: tap to draw the last-used shape, tap again (while active) to change type ----
+  const shapeToolBtn = document.getElementById('shapeTool');
+  const shapeMenu = document.getElementById('shapeMenu');
+  const SHAPE_META = {
+    shapeLine:     { label: 'Line',      icon: '<path d="M4 20L20 4"/>' },
+    shapeRect:     { label: 'Rectangle', icon: '<rect x="4" y="4" width="16" height="16" rx="2"/>' },
+    shapeCircle:   { label: 'Circle',    icon: '<circle cx="12" cy="12" r="8"/>' },
+    shapeTriangle: { label: 'Triangle',  icon: '<path d="M12 4l8 16H4z"/>' },
+    shapeArrow:    { label: 'Arrow',     icon: '<path d="M4 12h14"/><path d="M13 6l6 6-6 6"/>' }
+  };
+  const SHAPE_GENERIC_ICON = '<rect x="3" y="10" width="9" height="9" rx="1.5"/><circle cx="17" cy="7" r="4"/>';
+  let lastShapeTool = null; // no default — button opens the picker until a shape has actually been chosen
+  function updateShapeIcon(){
+    document.getElementById('shapeToolIcon').innerHTML = lastShapeTool ? SHAPE_META[lastShapeTool].icon : SHAPE_GENERIC_ICON;
+  }
+  function renderShapeMenu(){
+    shapeMenu.innerHTML = Object.entries(SHAPE_META).map(([k, m]) => `
+      <div class="pRow" data-shape="${k}">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${m.icon}</svg>
+        ${m.label}
+        ${tool === k ? '<span class="check" style="margin-left:auto;color:var(--accent);">✓</span>' : ''}
+      </div>`).join('');
+    shapeMenu.querySelectorAll('[data-shape]').forEach(row => {
+      row.addEventListener('click', () => {
+        lastShapeTool = row.dataset.shape;
+        updateShapeIcon();
+        selectTool(lastShapeTool);
+        shapeMenu.classList.add('hidden');
+      });
+    });
+  }
+  shapeToolBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (SHAPE_TOOLS.has(tool) || !lastShapeTool){
+      renderShapeMenu();
+      positionPopover(shapeMenu, shapeToolBtn);
+      shapeMenu.classList.toggle('hidden');
+    } else {
+      selectTool(lastShapeTool);
+    }
+  });
+  document.addEventListener('click', () => shapeMenu.classList.add('hidden'));
+  updateShapeIcon();
+
+  // ---- Image tool: tap opens the photo picker; once chosen, drag on the page to place & size it ----
+  const imageToolBtn = document.getElementById('imageTool');
+  const imageFileInput = document.getElementById('imageFileInput');
+  let pendingImageSrc = null;
+  imageToolBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    imageFileInput.click();
+  });
+  imageFileInput.addEventListener('change', () => {
+    const file = imageFileInput.files && imageFileInput.files[0];
+    imageFileInput.value = '';
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      pendingImageSrc = reader.result;
+      selectTool('image');
+    };
+    reader.readAsDataURL(file);
+  });
+
+  // ---- Table tool: tap to draw with the last-used grid size, tap again (while active) to change it ----
+  const tableToolBtn = document.getElementById('tableTool');
+  let lastTableDims = { rows: 3, cols: 3 };
+  tableToolBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (tool === 'table'){
+      const input = await customPrompt('Rows, Columns', `${lastTableDims.rows},${lastTableDims.cols}`);
+      if (input){
+        const parts = input.split(',').map(n => parseInt(n.trim(), 10)).filter(n => n > 0);
+        if (parts.length === 2) lastTableDims = { rows: parts[0], cols: parts[1] };
+      }
+    } else {
+      selectTool('table');
+    }
+  });
+
+  // ---- Arrow toggle: shows/hides the colors + width row ----
+  const arrowToggleBtn = document.getElementById('arrowToggle');
+  const toolOptionsRow = document.getElementById('toolOptionsRow');
+  arrowToggleBtn.addEventListener('click', () => {
+    toolOptionsRow.classList.toggle('hidden');
+    arrowToggleBtn.classList.toggle('open', !toolOptionsRow.classList.contains('hidden'));
+  });
+
+  // ---- Lasso action bar: copy, crop (images only), delete ----
+  document.getElementById('lassoCopyBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const page = activeNotebook && activeNotebook.pages[lassoSelPageId];
+    if (page && lassoSelection.length){
+      const newIndices = [];
+      lassoSelection.forEach(i => {
+        const orig = page.strokes[i];
+        if (!orig) return;
+        page.strokes.push(duplicateStroke(orig));
+        newIndices.push(page.strokes.length - 1);
+      });
+      page.redo = [];
+      scheduleSave();
+      lassoSelection = newIndices; // select the new copies so they're ready to drag away
+      redrawPage(lassoSelPageId);
+      drawLassoOverlay(pageCanvases.get(lassoSelPageId));
+    }
+  });
+  document.getElementById('lassoDeleteBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const page = activeNotebook && activeNotebook.pages[lassoSelPageId];
+    if (page && lassoSelection.length){
+      const toDelete = new Set(lassoSelection);
+      page.strokes = page.strokes.filter((s, i) => !toDelete.has(i));
+      page.redo = [];
+      scheduleSave();
+      redrawPage(lassoSelPageId);
+    }
+    clearLassoSelection();
+  });
+  document.getElementById('lassoCropBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (lassoSelection.length !== 1 || !lassoSelPageId) return;
+    startCropMode(lassoSelPageId, lassoSelection[0]);
+  });
+  document.getElementById('lassoLockBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const page = activeNotebook && activeNotebook.pages[lassoSelPageId];
+    if (lassoSelection.length !== 1 || !page) return;
+    const s = page.strokes[lassoSelection[0]];
+    if (!s || (s.tool !== 'image' && s.tool !== 'table')) return;
+    s.locked = !s.locked;
+    scheduleSave();
+    updateLassoDeleteBtnPosition();
+    const pc = pageCanvases.get(lassoSelPageId);
+    if (pc) drawLassoOverlay(pc);
+  });
+  wrap.addEventListener('scroll', () => { if (lassoSelection.length) updateLassoDeleteBtnPosition(); });
+
+  const SWATCH_COLORS = ['#1c2430', '#2f4fa8', '#b4483a', '#2f7a4f', '#e0a12c'];
+  const ERASER_SIZES_CM = [1, 2, 3];
+  // What the second toolbar row shows for each tool — matched to what that tool actually uses.
+  function toolOptionsConfig(t){
+    if (t === 'eraser')  return { eraserSizes:true, clearPage:true };
+    if (t === 'laser')   return { width:true,  widthLabel:'Pointer size' };            // laser color is fixed
+    if (t === 'table')   return { color:true, width:true, widthLabel:'Line width', tableGrid:true };
+    if (t === 'image' || t === 'lasso' || t === 'cropImage') return {};                  // nothing to configure
+    return { color:true, width:true, widthLabel:'Line width' };                          // pen, pencil, highlighter, shapes
+  }
+  function renderToolOptionsRow(){
+    const row = document.getElementById('toolOptionsRow');
+    row.innerHTML = '';
+    const cfg = toolOptionsConfig(tool);
+    if (cfg.color){
+      SWATCH_COLORS.forEach(c => {
+        const sw = document.createElement('div');
+        sw.className = 'swatch' + (c === color ? ' active' : '');
+        sw.dataset.color = c;
+        sw.style.background = c;
+        sw.addEventListener('click', () => {
+          color = c;
+          row.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
+          sw.classList.add('active');
+        });
+        row.appendChild(sw);
+      });
+      // Custom color — opens the native color picker for anything outside the fixed swatches.
+      const custom = document.createElement('div');
+      const isCustom = !SWATCH_COLORS.includes(color);
+      custom.className = 'swatch swatchCustom' + (isCustom ? ' active' : '');
+      custom.title = 'Custom color';
+      custom.style.background = isCustom
+        ? color
+        : 'conic-gradient(from 0deg, red, yellow, lime, cyan, blue, magenta, red)';
+      custom.addEventListener('click', () => {
+        const picker = document.getElementById('customColorPicker');
+        picker.value = isCustom ? color : '#ff3b30';
+        picker.click();
+      });
+      row.appendChild(custom);
+    }
+    if (cfg.color && cfg.width){
+      const div = document.createElement('div'); div.className = 'ediv'; row.appendChild(div);
+    }
+    if (cfg.eraserSizes){
+      ERASER_SIZES_CM.forEach(cm => {
+        const px = cm * PX_PER_CM;
+        const circle = document.createElement('div');
+        circle.className = 'eraserSizeCircle' + (Math.abs(eraserWidth - px) < 1 ? ' active' : '');
+        circle.title = `${cm}cm eraser`;
+        const dotPx = Math.round(10 + cm * 7);
+        circle.innerHTML = `<span class="swatchDot" style="width:${dotPx}px;height:${dotPx}px;"></span>`;
+        circle.addEventListener('click', () => {
+          eraserWidth = px;
+          row.querySelectorAll('.eraserSizeCircle').forEach(s => s.classList.remove('active'));
+          circle.classList.add('active');
+        });
+        row.appendChild(circle);
+      });
+    }
+    if (cfg.tableGrid){
+      const wrapEl = document.createElement('div');
+      wrapEl.style.cssText = 'display:flex;align-items:center;gap:4px;flex-shrink:0;';
+      wrapEl.innerHTML = `
+        <span class="optLabel">Rows</span>
+        <input type="number" id="tableRowsInput" min="1" max="20" style="width:38px;font-size:12px;padding:3px;border:1px solid var(--paper-line);border-radius:6px;">
+        <span class="optLabel">Cols</span>
+        <input type="number" id="tableColsInput" min="1" max="20" style="width:38px;font-size:12px;padding:3px;border:1px solid var(--paper-line);border-radius:6px;">`;
+      row.appendChild(wrapEl);
+      const rowsInput = wrapEl.querySelector('#tableRowsInput');
+      const colsInput = wrapEl.querySelector('#tableColsInput');
+      rowsInput.value = lastTableDims.rows;
+      colsInput.value = lastTableDims.cols;
+      rowsInput.addEventListener('input', () => {
+        const n = parseInt(rowsInput.value, 10);
+        if (n > 0) lastTableDims = { ...lastTableDims, rows: n };
+      });
+      colsInput.addEventListener('input', () => {
+        const n = parseInt(colsInput.value, 10);
+        if (n > 0) lastTableDims = { ...lastTableDims, cols: n };
+      });
+      const div2 = document.createElement('div'); div2.className = 'ediv'; row.appendChild(div2);
+    }
+    if (cfg.width){
+      const label = document.createElement('span');
+      label.className = 'optLabel';
+      label.textContent = cfg.widthLabel || 'Width';
+      row.appendChild(label);
+      const slider = document.createElement('input');
+      slider.type = 'range'; slider.id = 'widthSlider';
+      slider.min = '1'; slider.max = '14'; slider.step = '0.5'; slider.value = String(width);
+      slider.addEventListener('input', (e) => { width = parseFloat(e.target.value); });
+      row.appendChild(slider);
+    }
+    if (!cfg.color && !cfg.width && !cfg.eraserSizes){
+      const note = document.createElement('span');
+      note.className = 'emptyNote';
+      note.textContent = 'No options for this tool.';
+      row.appendChild(note);
+    }
+    if (cfg.clearPage){
+      const btn = document.createElement('button');
+      btn.id = 'clearPageBtn';
+      btn.title = 'Clear page — erases pen and pencil strokes only';
+      btn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20c2-1 3-3 5-3s3 2 5 2 3-2 5-2 3 2 3 2"/><path d="M9 14l7-7 3 3-7 7H9v-3z"/><path d="M16 7l-2-2 2-2 2 2z"/></svg>`;
+      btn.addEventListener('click', async () => {
+        const page = activeNotebook && activeNotebook.pages[currentId];
+        if (!page) return;
+        const hasAny = page.strokes.some(s => s.tool === 'pen' || s.tool === 'pencil');
+        if (!hasAny) return;
+        const ok = await customConfirm('Clear all pen and pencil strokes on this page? Other content (highlighter, shapes, images, etc.) stays.');
+        if (!ok) return;
+        page.strokes = page.strokes.filter(s => s.tool !== 'pen' && s.tool !== 'pencil');
+        page.redo = [];
+        scheduleSave();
+        redrawPage(currentId);
+      });
+      row.appendChild(btn);
+    }
+  }
+  renderToolOptionsRow();
+  document.getElementById('customColorPicker').addEventListener('input', (e) => {
+    color = e.target.value;
+    renderToolOptionsRow();
+  });
+
+  document.getElementById('undoBtn').addEventListener('click', () => {
+    const page = activeNotebook && activeNotebook.pages[currentId];
+    if (page && page.strokes.length){
+      if (!page.redo) page.redo = [];
+      page.redo.push(page.strokes.pop());
+      redrawPage(currentId);
+      scheduleSave();
+    }
+  });
+  document.getElementById('redoBtn').addEventListener('click', () => {
+    const page = activeNotebook && activeNotebook.pages[currentId];
+    if (page && page.redo && page.redo.length){
+      page.strokes.push(page.redo.pop());
+      redrawPage(currentId);
+      scheduleSave();
+    }
+  });
+
+  // ---- All pages modal ----
+  const pagesModal = document.getElementById('pagesModal');
+  const pagesGrid = document.getElementById('pagesGrid');
+  function openPagesModal(){ renderPagesGrid(); pagesModal.classList.remove('hidden'); }
+  document.getElementById('allPagesBtn').addEventListener('click', openPagesModal);
+  document.getElementById('pagesModalClose').addEventListener('click', () => pagesModal.classList.add('hidden'));
+  pagesModal.addEventListener('click', (e) => { if (e.target === pagesModal) pagesModal.classList.add('hidden'); });
+
+  function renderPagesGrid(){
+    pagesGrid.innerHTML = '';
+    activeNotebook.pageOrder.forEach((id, idx) => {
+      const card = document.createElement('div');
+      card.className = 'pageCard' + (id === currentId ? ' active' : '');
+      card.innerHTML = `<div class="thumb">${idx+1}</div><div class="label"></div>`;
+      card.querySelector('.label').textContent = activeNotebook.pages[id].title;
+      if (activeNotebook.pageOrder.length > 1){
+        const del = document.createElement('button');
+        del.className = 'pageDelete'; del.textContent = '✕';
+        del.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const idx2 = activeNotebook.pageOrder.indexOf(id);
+          activeNotebook.pageOrder.splice(idx2, 1);
+          delete activeNotebook.pages[id];
+          const pc = pageCanvases.get(id);
+          if (pc){ if (pageObserver) pageObserver.unobserve(pc.frame); pc.frame.remove(); pageCanvases.delete(id); }
+          if (currentId === id) scrollToPage(activeNotebook.pageOrder[Math.max(0, idx2-1)]);
+          renderPagesGrid();
+          scheduleSave();
+        });
+        card.appendChild(del);
+      }
+      card.addEventListener('click', () => { scrollToPage(id); pagesModal.classList.add('hidden'); });
+      pagesGrid.appendChild(card);
+    });
+    const addTile = document.createElement('div');
+    addTile.className = 'pageCard addTile';
+    addTile.innerHTML = `<div class="thumb">+</div><div class="label">New page</div>`;
+    addTile.addEventListener('click', () => { addNewPage(); renderPagesGrid(); });
+    pagesGrid.appendChild(addTile);
+  }
+
+  function addNewPage(){
+    const id = uid();
+    activeNotebook.pages[id] = newPageObj();
+    activeNotebook.pageOrder.push(id);
+    const frame = createPageFrame(id);
+    stage.appendChild(frame);
+    if (pageObserver) pageObserver.observe(frame);
+    scrollToPage(id);
+    scheduleSave();
+  }
+  document.getElementById('addPage').addEventListener('click', addNewPage);
+
+  titleEl.addEventListener('input', () => {
+    if (!currentId || !activeNotebook) return;
+    activeNotebook.pages[currentId].title = titleEl.value || 'Untitled page';
+    scheduleSave();
+  });
+
+  // ---- Recent notebooks popover ----
+  const recentPopover = document.getElementById('recentPopover');
+  recentPopover.addEventListener('click', (e) => e.stopPropagation());
+  function positionPopover(popover, btn){
+    const r = btn.getBoundingClientRect();
+    popover.style.top = (r.bottom + 6) + 'px';
+    const left = Math.min(r.left, window.innerWidth - 300);
+    popover.style.left = Math.max(8, left) + 'px';
+  }
+  document.getElementById('recentBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    renderRecentPopover();
+    positionPopover(recentPopover, e.currentTarget);
+    recentPopover.classList.toggle('hidden');
+    morePanel.classList.add('hidden');
+  });
+  function renderRecentPopover(){
+    recentPopover.innerHTML = '';
+    const recents = (data.recentNotebooks || []).filter(id => data.notebooks[id] && id !== nav.notebookId);
+    if (!recents.length){
+      recentPopover.innerHTML = '<div class="pRow" style="cursor:default;color:#a39c86;">No other recent notebooks</div>';
+      return;
+    }
+    const head = document.createElement('div');
+    head.className = 'pHeader'; head.textContent = 'Recent notebooks';
+    recentPopover.appendChild(head);
+    recents.forEach(id => {
+      const nb = data.notebooks[id];
+      const folder = nb.folderId ? data.folders[nb.folderId] : null;
+      const row = document.createElement('div');
+      row.className = 'pRow';
+      row.innerHTML = `<span>${escapeHtml(nb.name)}</span>`;
+      const sub = document.createElement('span');
+      sub.className = 'sub'; sub.textContent = folder ? folder.name : '';
+      row.appendChild(sub);
+      row.addEventListener('click', () => { recentPopover.classList.add('hidden'); openNotebook(id); });
+      recentPopover.appendChild(row);
+    });
+  }
+
+  // ---- More menu ----
+  const morePanel = document.getElementById('morePanel');
+  morePanel.addEventListener('click', (e) => e.stopPropagation());
+  document.getElementById('moreBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    renderMorePanel();
+    positionPopover(morePanel, e.currentTarget);
+    morePanel.classList.toggle('hidden');
+    recentPopover.classList.add('hidden');
+  });
+
+  function fmtDate(ts){
+    if (!ts) return '—';
+    const d = new Date(ts);
+    return d.toLocaleDateString(undefined, {day:'numeric', month:'short', year:'numeric'}) + ', ' +
+           d.toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit'});
+  }
+
+  function exportCurrentPage(){
+    const pc = pageCanvases.get(currentId);
+    if (!pc) return;
+    const off = document.createElement('canvas');
+    off.width = pc.canvas.width; off.height = pc.canvas.height;
+    const octx = off.getContext('2d');
+    octx.fillStyle = getEffectiveTemplateFor(activeNotebook.pages[currentId]).bgColor || '#f6f3ec';
+    octx.fillRect(0,0,off.width,off.height);
+    octx.drawImage(pc.bgCanvas, 0, 0);
+    octx.drawImage(pc.canvas, 0, 0);
+    const link = document.createElement('a');
+    const title = (activeNotebook.pages[currentId].title || 'page').replace(/[^\w\- ]+/g,'').trim() || 'page';
+    link.download = `${title}.png`;
+    link.href = off.toDataURL('image/png');
+    link.click();
+  }
+
+  function renderMorePanel(){
+    const pages = activeNotebook.pageOrder.length;
+    let thumbSrc = '';
+    const pc = pageCanvases.get(currentId);
+    try {
+      if (pc){
+        const off = document.createElement('canvas');
+        off.width = pc.canvas.width; off.height = pc.canvas.height;
+        const octx = off.getContext('2d');
+        octx.drawImage(pc.bgCanvas, 0, 0);
+        octx.drawImage(pc.canvas, 0, 0);
+        thumbSrc = off.toDataURL('image/png');
+      }
+    } catch(e){ thumbSrc = ''; }
+    const dps = data.settings.defaultPageSize || 'a4';
+    morePanel.innerHTML = `
+      <div class="moreHeader">
+        ${thumbSrc ? `<img class="moreThumb" src="${thumbSrc}">` : `<div class="moreThumb"></div>`}
+        <div class="moreInfo">
+          <div class="n">${escapeHtml(activeNotebook.name)}</div>
+          <div class="m">${pages} page${pages===1?'':'s'}<br>
+            Last modified: ${fmtDate(activeNotebook.modifiedAt)}<br>
+            Created at: ${fmtDate(activeNotebook.createdAt)}</div>
+        </div>
+      </div>
+      <div class="tileRow">
+        <button class="tile" id="tileExport">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 21h14"/></svg>
+          <span>Export</span>
+        </button>
+        <button class="tile" id="tileRename">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg>
+          <span>Rename</span>
+        </button>
+        <button class="tile" id="tileGoto">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 12h6M13 9l3 3-3 3"/></svg>
+          <span>Go to page</span>
+        </button>
+        <button class="tile fav ${activeNotebook.favorite ? 'active' : ''}" id="tileFav">
+          <svg viewBox="0 0 24 24" fill="${activeNotebook.favorite ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15 9 22 9 16.5 13.5 18.5 21 12 16.5 5.5 21 7.5 13.5 2 9 9 9 12 2"/></svg>
+          <span>Favorite</span>
+        </button>
+      </div>
+      <div class="pDivider"></div>
+      <div class="listRow" id="rowTemplate">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="16" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg>
+        Change template
+      </div>
+      <div class="listRow" id="rowStylus">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+        Stylus &amp; finger <span class="chev">›</span>
+      </div>
+      <div class="chipRow hidden" id="chipsStylus">
+        <div class="radioPanel">
+          <div class="radioGroupLabel">Single finger</div>
+          <label class="radioOption"><input type="radio" name="singleFinger" value="ignored"><span>Ignored</span></label>
+          <label class="radioOption"><input type="radio" name="singleFinger" value="draw"><span>Draw</span></label>
+          <label class="radioOption"><input type="radio" name="singleFinger" value="scroll"><span>Scroll</span></label>
+          <div class="radioGroupLabel" style="margin-top:10px;">Double finger</div>
+          <label class="radioOption"><input type="radio" name="doubleFinger" value="ignored"><span>Ignored</span></label>
+          <label class="radioOption"><input type="radio" name="doubleFinger" value="zoompan"><span>Zoom and pan</span></label>
+          <label class="radioOption"><input type="radio" name="doubleFinger" value="scroll"><span>Scroll</span></label>
+          ${zoomLocked ? '<div class="lockNote">Zoom is currently locked, therefore double finger input will be detected as scrolling instead.</div>' : ''}
+        </div>
+      </div>
+      <div class="listRow" id="rowSettings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Settings <span class="chev">›</span>
+      </div>
+      <div class="chipRow hidden" id="chipsSettings">
+        <div class="chip" data-v="palm">Palm rejection: ${data.settings.palmRejection ? 'On' : 'Off'}</div>
+        <div class="fullRow">Default page size for new notebooks</div>
+        <div class="chip pageSizeChip ${dps==='a4'?'active':''}" data-size="a4">A4</div>
+        <div class="chip pageSizeChip ${dps==='letter'?'active':''}" data-size="letter">Letter</div>
+        <div class="chip pageSizeChip ${dps==='square'?'active':''}" data-size="square">Square</div>
+        <div class="chip pageSizeChip ${dps==='wide'?'active':''}" data-size="wide">Wide</div>
+      </div>
+    `;
+
+    morePanel.querySelector('#tileExport').addEventListener('click', () => { exportCurrentPage(); morePanel.classList.add('hidden'); });
+    morePanel.querySelector('#tileRename').addEventListener('click', async () => {
+      morePanel.classList.add('hidden');
+      const name = await customPrompt('Notebook name', activeNotebook.name);
+      if (name && name.trim()){ activeNotebook.name = name.trim(); scheduleSave(); }
+    });
+    morePanel.querySelector('#tileGoto').addEventListener('click', () => { morePanel.classList.add('hidden'); openPagesModal(); });
+    morePanel.querySelector('#tileFav').addEventListener('click', () => {
+      activeNotebook.favorite = !activeNotebook.favorite;
+      scheduleSave();
+      renderMorePanel();
+    });
+    morePanel.querySelector('#rowTemplate').addEventListener('click', () => {
+      morePanel.classList.add('hidden');
+      openTemplateModal();
+    });
+
+    function wireExpand(rowId, chipsId){
+      const row = morePanel.querySelector(rowId);
+      const chips = morePanel.querySelector(chipsId);
+      row.addEventListener('click', () => {
+        const willOpen = chips.classList.contains('hidden');
+        morePanel.querySelectorAll('.chipRow').forEach(c => c.classList.add('hidden'));
+        morePanel.querySelectorAll('.listRow').forEach(r => r.classList.remove('open'));
+        if (willOpen){ chips.classList.remove('hidden'); row.classList.add('open'); }
+      });
+      return { row, chips };
+    }
+
+    const stylusExpand = wireExpand('#rowStylus', '#chipsStylus');
+    stylusExpand.chips.querySelector(`input[name="singleFinger"][value="${data.settings.singleFinger || 'draw'}"]`).checked = true;
+    stylusExpand.chips.querySelector(`input[name="doubleFinger"][value="${data.settings.doubleFinger || 'zoompan'}"]`).checked = true;
+    stylusExpand.chips.querySelectorAll('input[name="singleFinger"]').forEach(r => r.addEventListener('change', () => {
+      data.settings.singleFinger = r.value; refreshTouchAction(); scheduleSave();
+    }));
+    stylusExpand.chips.querySelectorAll('input[name="doubleFinger"]').forEach(r => r.addEventListener('change', () => {
+      data.settings.doubleFinger = r.value; scheduleSave();
+    }));
+
+    const settingsExpand = wireExpand('#rowSettings', '#chipsSettings');
+    settingsExpand.chips.querySelectorAll('.chip[data-v]').forEach(chip => {
+      chip.addEventListener('click', () => {
+        if (chip.dataset.v === 'palm') data.settings.palmRejection = !data.settings.palmRejection;
+        scheduleSave();
+        renderMorePanel();
+      });
+    });
+    settingsExpand.chips.querySelectorAll('.pageSizeChip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        data.settings.defaultPageSize = chip.dataset.size;
+        scheduleSave();
+        renderMorePanel();
+      });
+    });
+  }
+  document.addEventListener('click', () => { recentPopover.classList.add('hidden'); morePanel.classList.add('hidden'); });
+
+  // ---- Template modal ----
+  const templateModal = document.getElementById('templateModal');
+  let tmplState = null;
+  const TMPL_COLORS = ['#ffffff', '#f6f3ec', '#e2c48f', '#cbd6ea', '#3a3f4a', '#111319'];
+  function densityFromPx(px){ return Math.max(1, Math.min(9, Math.round((52 - px) / 3))); }
+  function pxFromDensity(d){ return 52 - d * 3; }
+  function styleThumbCss(v, bg){
+    if (v === 'blank') return `background:${bg};`;
+    if (v === 'ruled') return `background:repeating-linear-gradient(${bg}, ${bg} 6px, var(--paper-line) 7px);`;
+    if (v === 'grid') return `background-color:${bg}; background-image:linear-gradient(var(--paper-line) 1px, transparent 1px), linear-gradient(90deg, var(--paper-line) 1px, transparent 1px); background-size:8px 8px;`;
+    return `background-color:${bg}; background-image:radial-gradient(var(--paper-line) 1px, transparent 1.4px); background-size:8px 8px;`;
+  }
+  function openTemplateModal(){
+    const eff = getEffectiveTemplateFor(activeNotebook.pages[currentId]);
+    tmplState = { bgColor: eff.bgColor, template: eff.template, spacing: eff.spacing };
+    document.getElementById('tmplSetDefault').checked = false;
+    renderTemplateModal();
+    templateModal.classList.remove('hidden');
+  }
+  function closeTemplateModal(){ templateModal.classList.add('hidden'); }
+  function renderTemplateModal(){
+    const swEl = document.getElementById('tmplSwatches');
+    swEl.innerHTML = TMPL_COLORS.map(c => `<div class="tmplSwatch ${tmplState.bgColor===c?'active':''}" data-c="${c}" style="background:${c}"></div>`).join('');
+    swEl.querySelectorAll('.tmplSwatch').forEach(sw => sw.addEventListener('click', () => { tmplState.bgColor = sw.dataset.c; renderTemplateModal(); }));
+
+    document.getElementById('tmplDensity').value = densityFromPx(tmplState.spacing);
+    document.getElementById('tmplDensityVal').textContent = densityFromPx(tmplState.spacing);
+
+    const styles = [['blank','Blank'],['ruled','Rule'],['grid','Grid'],['dot','Dot']];
+    const stEl = document.getElementById('tmplStyles');
+    stEl.innerHTML = styles.map(([v,label]) => `
+      <div class="tmplStyleCard ${tmplState.template===v?'active':''}" data-v="${v}">
+        <div class="tmplStyleThumb" style="${styleThumbCss(v, tmplState.bgColor)}"></div>
+        <div class="lbl">${label}</div>
+      </div>`).join('');
+    stEl.querySelectorAll('.tmplStyleCard').forEach(card => card.addEventListener('click', () => { tmplState.template = card.dataset.v; renderTemplateModal(); }));
+  }
+  document.getElementById('tmplDensity').addEventListener('input', (e) => {
+    tmplState.spacing = pxFromDensity(parseInt(e.target.value));
+    document.getElementById('tmplDensityVal').textContent = e.target.value;
+    document.querySelectorAll('.tmplStyleThumb').forEach(el => { el.style.backgroundSize = `${tmplState.spacing}px ${tmplState.spacing}px`; });
+  });
+  document.getElementById('templateModalClose').addEventListener('click', closeTemplateModal);
+  templateModal.addEventListener('click', (e) => { if (e.target === templateModal) closeTemplateModal(); });
+  document.getElementById('tmplApplyCurrent').addEventListener('click', () => {
+    const page = activeNotebook.pages[currentId];
+    page.tmplOverride = { bgColor: tmplState.bgColor, template: tmplState.template, spacing: tmplState.spacing };
+    if (document.getElementById('tmplSetDefault').checked){
+      data.settings.defaultTemplate = { bgColor: tmplState.bgColor, template: tmplState.template, spacing: tmplState.spacing };
+    }
+    const pc = pageCanvases.get(currentId);
+    if (pc) applyFrameBackground(pc.frame, page);
+    scheduleSave();
+    closeTemplateModal();
+  });
+  document.getElementById('tmplApplyAll').addEventListener('click', () => {
+    activeNotebook.bgColor = tmplState.bgColor;
+    activeNotebook.template = tmplState.template;
+    activeNotebook.spacingPx = tmplState.spacing;
+    activeNotebook.pageOrder.forEach(pid => {
+      delete activeNotebook.pages[pid].tmplOverride;
+      const pc = pageCanvases.get(pid);
+      if (pc) applyFrameBackground(pc.frame, activeNotebook.pages[pid]);
+    });
+    if (document.getElementById('tmplSetDefault').checked){
+      data.settings.defaultTemplate = { bgColor: tmplState.bgColor, template: tmplState.template, spacing: tmplState.spacing };
+    }
+    scheduleSave();
+    closeTemplateModal();
+  });
+
+  window.addEventListener('resize', () => {
+    const newDpr = Math.max(window.devicePixelRatio || 1, 1);
+    if (newDpr !== dpr && activeNotebook){ dpr = newDpr; renderPageStack(); }
+  });
+
+  loadAll();
+})();
+</script>
+</body>
+</html>
