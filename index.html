@@ -124,6 +124,7 @@
     margin-left: 10px;
   }
   .folderCard .body {
+    position:relative;
     background: var(--folder-tan);
     border-radius: 4px 10px 10px 10px;
     padding: 16px 14px;
@@ -150,6 +151,7 @@
   /* Notebook card: cover with colored spine */
   .notebookCard { position:relative; cursor:pointer; }
   .notebookCard .cover {
+    position:relative;
     background: var(--panel);
     border-radius: 4px 8px 8px 4px;
     min-height: 100px;
@@ -837,12 +839,69 @@
   }
 
   // ---- Persistence ----
+  // Real local storage so data survives closing the app — window.storage only exists inside
+  // Claude.ai's artifact preview, not in a normal browser/webview, so relying on it alone meant
+  // saves were silently failing everywhere else. IndexedDB is the primary store (no practical size
+  // limit, so embedded photos/PDFs are safe); localStorage is a fallback if IndexedDB is somehow
+  // unavailable; window.storage is still tried first so nothing changes when running in Claude.ai.
+  const STORAGE_KEY = 'notebook-data-v1';
+  const IDB_NAME = 'notebookAppDB';
+  const IDB_STORE = 'kv';
+  let idbPromise = null;
+  function openIDB(){
+    if (idbPromise) return idbPromise;
+    idbPromise = new Promise((resolve, reject) => {
+      if (!window.indexedDB){ reject(new Error('IndexedDB unavailable')); return; }
+      const req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = () => { req.result.createObjectStore(IDB_STORE); };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return idbPromise;
+  }
+  function idbGet(key){
+    return openIDB().then(db => new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const req = tx.objectStore(IDB_STORE).get(key);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    }));
+  }
+  function idbSet(key, value){
+    return openIDB().then(db => new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).put(value, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    }));
+  }
+  async function storageGetRaw(key){
+    if (window.storage && typeof window.storage.get === 'function'){
+      try {
+        const res = await window.storage.get(key, false);
+        if (res && res.value) return res.value;
+      } catch(e){ /* not running inside Claude.ai — fall through */ }
+    }
+    try {
+      const v = await idbGet(key);
+      if (v) return v;
+    } catch(e){ /* IndexedDB unavailable — fall through */ }
+    try { return localStorage.getItem(key); } catch(e){ return null; }
+  }
+  async function storageSetRaw(key, value){
+    if (window.storage && typeof window.storage.set === 'function'){
+      try { await window.storage.set(key, value, false); return; } catch(e){ /* fall through */ }
+    }
+    try { await idbSet(key, value); return; } catch(e){ /* fall through */ }
+    try { localStorage.setItem(key, value); } catch(e){ /* out of space / unavailable — best effort */ }
+  }
+
   let saveTimer = null;
   async function loadAll(){
     try {
-      const res = await window.storage.get('inkling-data-v2', false);
-      if (res && res.value){
-        const parsed = JSON.parse(res.value);
+      const raw = await storageGetRaw(STORAGE_KEY);
+      if (raw){
+        const parsed = JSON.parse(raw);
         data = Object.assign({folders:{}, folderOrder:[], notebooks:{}, trash:[], rootNotebookIds:[], settings:{singleFinger:'draw', doubleFinger:'zoompan', palmRejection:true}}, parsed);
         if (!data.rootNotebookIds) data.rootNotebookIds = [];
         if (!data.settings) data.settings = { singleFinger:'draw', doubleFinger:'zoompan', palmRejection:true };
@@ -862,7 +921,7 @@
   }
   async function saveAll(){
     try {
-      await window.storage.set('inkling-data-v2', JSON.stringify(data), false);
+      await storageSetRaw(STORAGE_KEY, JSON.stringify(data));
     } catch(e){
       /* best effort */
     }
@@ -1590,6 +1649,7 @@
   const DRAG_TOOLS = new Set(['shapeLine', 'shapeRect', 'shapeCircle', 'table', 'image']);
 
   function effectivePressure(stroke, p){
+    if (stroke.tool === 'eraser') return 1; // eraser size is fixed by the picker, never scaled by touch/pen pressure
     const s = TOOL_STYLE[stroke.tool] || TOOL_STYLE.pen;
     return s.pressureDamp ? (1 - s.pressureDamp) + p * s.pressureDamp * 0.6 + 0.4*s.pressureDamp : p;
   }
@@ -2422,6 +2482,7 @@
   function handlePointerDown(e, pageId){
     if (drawing || !activeNotebook) return;
     if (pinching) return;
+    cancelPanMomentum();
     const stylus = isStylusLike(e);
     if (e.pointerType === 'touch' && !stylus){
       const mode = data.settings.singleFinger || 'draw';
@@ -2594,9 +2655,12 @@
   wrap.addEventListener('touchstart', (e) => {
     if (e.touches.length === 2){
       cancelActiveStroke();
+      cancelPanMomentum();
       const mode = zoomLocked ? 'scroll' : (data.settings.doubleFinger || 'zoompan');
       twoFingerMode = mode;
       twoFingerLastMid = midTouch(e.touches[0], e.touches[1]);
+      panVelocity = { x: 0, y: 0 };
+      lastPanMoveTime = performance.now();
       if (mode === 'ignored'){ e.preventDefault(); return; }
       e.preventDefault();
       pinchStartDist = distBetween(e.touches[0], e.touches[1]);
@@ -2617,6 +2681,25 @@
 
   let pendingTwoFingerMove = null;
   let twoFingerFrameQueued = false;
+  let panVelocity = { x: 0, y: 0 };
+  let lastPanMoveTime = 0;
+  let panMomentumRAF = null;
+  function cancelPanMomentum(){
+    if (panMomentumRAF){ cancelAnimationFrame(panMomentumRAF); panMomentumRAF = null; }
+  }
+  function startPanMomentum(){
+    cancelPanMomentum();
+    const friction = 0.93;
+    function step(){
+      panVelocity.x *= friction;
+      panVelocity.y *= friction;
+      if (Math.abs(panVelocity.x) < 0.4 && Math.abs(panVelocity.y) < 0.4){ panMomentumRAF = null; return; }
+      wrap.scrollLeft += panVelocity.x;
+      wrap.scrollTop += panVelocity.y;
+      panMomentumRAF = requestAnimationFrame(step);
+    }
+    panMomentumRAF = requestAnimationFrame(step);
+  }
   function scheduleTwoFingerFrame(){
     if (twoFingerFrameQueued) return;
     twoFingerFrameQueued = true;
@@ -2629,15 +2712,26 @@
         const newZoom = Math.min(4, Math.max(0.5, pinchStartZoom * (move.d / pinchStartDist)));
         setZoomAnchored(newZoom, move.m.x, move.m.y);
       } else if (move.mode === 'scroll' && twoFingerLastMid){
-        wrap.scrollLeft -= (move.m.x - twoFingerLastMid.x);
-        wrap.scrollTop -= (move.m.y - twoFingerLastMid.y);
+        const dx = move.m.x - twoFingerLastMid.x, dy = move.m.y - twoFingerLastMid.y;
+        wrap.scrollLeft -= dx;
+        wrap.scrollTop -= dy;
+        const now = performance.now();
+        const dt = Math.max(8, now - lastPanMoveTime);
+        // Smoothed velocity in px/frame (~16ms), blended with the previous sample so a single
+        // jittery touch reading can't spike the momentum on release.
+        const vx = -dx / dt * 16, vy = -dy / dt * 16;
+        panVelocity = { x: panVelocity.x * 0.5 + vx * 0.5, y: panVelocity.y * 0.5 + vy * 0.5 };
+        lastPanMoveTime = now;
       }
       twoFingerLastMid = move.m;
     });
   }
 
   wrap.addEventListener('touchend', (e) => {
-    if (e.touches.length < 2){ pinching = false; twoFingerMode = null; twoFingerLastMid = null; pendingTwoFingerMove = null; }
+    if (e.touches.length < 2){
+      if (twoFingerMode === 'scroll') startPanMomentum();
+      pinching = false; twoFingerMode = null; twoFingerLastMid = null; pendingTwoFingerMove = null;
+    }
   }, {passive:true});
 
   wrap.addEventListener('wheel', (e) => {
@@ -2883,7 +2977,10 @@
     const pc = pageCanvases.get(lassoSelPageId);
     if (pc) drawLassoOverlay(pc);
   });
-  wrap.addEventListener('scroll', () => { if (lassoSelection.length) updateLassoDeleteBtnPosition(); });
+  wrap.addEventListener('scroll', () => {
+    if (lassoSelection.length) updateLassoDeleteBtnPosition();
+    if (wrap.scrollWidth <= wrap.clientWidth + 1 && wrap.scrollLeft !== 0) wrap.scrollLeft = 0;
+  });
 
   const SWATCH_COLORS = ['#1c2430', '#2f4fa8', '#b4483a', '#2f7a4f', '#e0a12c'];
   const ERASER_SIZES_CM = [1, 2, 3];
