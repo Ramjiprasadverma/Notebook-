@@ -429,13 +429,20 @@
     -webkit-overflow-scrolling: touch;
   }
   #canvasStage {
-    display:flex; flex-direction:column; align-items:center; gap:28px;
-    width:100%; padding: 28px 16px 200px;
-    /* Anchor scaling at top-center instead of the top-left corner. Since pages are already
-       horizontally centered inside this full-width stage, scaling around its own horizontal
-       center keeps them visually centered at any zoom level instead of drifting toward the
-       left edge as soon as the scaled content is smaller than the viewport. */
-    transform-origin: 50% 0;
+    display:flex; flex-direction:column; align-items:flex-start; gap:28px;
+    width:100%; padding: 10px 16px 10px;
+    /* Scale purely rightward/downward from the top-left corner. A transform can only ever be
+       scrolled INTO in the positive direction (scrollLeft can't go negative) — scaling around a
+       center point pushes half the growth to the left of the stage's static box, which then has
+       no way to be reached by scrolling. Anchoring at 0 0 avoids that entirely. Horizontal
+       centering is NOT done via align-items here (flex auto-centering only knows the stage's own
+       *unscaled* width, so once zoomed out it can't express "shift right enough to center in the
+       now much-larger effective viewport" without going through a scrollLeft that would have to
+       go negative). Instead each page frame gets a real, explicit margin-left computed in JS
+       (layoutFrameMargins()) that bakes the correct centering directly into layout, so it's
+       always reachable at scrollLeft >= 0.
+    */
+    transform-origin: 0 0;
   }
   .pageFrame {
     position:relative; flex-shrink:0; background:#fff;
@@ -1593,6 +1600,13 @@
   let drawing = false;
   let currentStroke = null;
   let zoom = 1;
+  // The zoom level that exactly fits the current page's width inside the viewport. Kept in sync
+  // any time the page or viewport size changes, so applyZoom() knows whether the user is at/below
+  // fit (no horizontal slide should ever be possible, like Drive) or has actually zoomed in past
+  // fit (where horizontal panning is expected).
+  let fitZoom = 1;
+  const MIN_ZOOM = 0.15;
+  const MAX_ZOOM = 4;
   let zoomLocked = false;
   let laserTimer = null;
   let pageCanvases = new Map(); // pageId -> {frame, canvas, ctx, laserCanvas, laserCtx}
@@ -1612,14 +1626,19 @@
     document.getElementById('browserView').classList.add('hidden');
     document.getElementById('editorView').classList.remove('hidden');
     document.getElementById('tabRail').classList.add('hidden');
-    zoom = 1; zoomLocked = false; applyZoom();
+    zoomLocked = false;
     try {
       const p = document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
       if (p && p.catch) p.catch(()=>{});
     } catch(e){ /* fullscreen not permitted in this context — fine, we already fill the viewport */ }
     currentId = activeNotebook.pageOrder[0];
+    // Open at fit-to-width instead of a flat 100%, so a full-size page never starts wider than
+    // the screen (which is what caused the horizontal slide on narrow/mobile viewports).
+    fitZoom = computeFitZoom();
+    zoom = fitZoom;
+    applyZoom();
     renderPageStack();
-    wrap.scrollTop = 0; wrap.scrollLeft = 0;
+    wrap.scrollTop = 0; clampScrollX(); clampScrollY(); // frame exists now, so these can actually center it
     updateActivePageUI();
     scheduleSave();
   }
@@ -2150,6 +2169,7 @@
     activeNotebook.pageOrder.forEach(pid => {
       stage.appendChild(createPageFrame(pid));
     });
+    layoutFrameMargins();
     setupPageObserver();
   }
 
@@ -2705,7 +2725,7 @@
       panVelocity.x *= friction;
       panVelocity.y *= friction;
       if (Math.abs(panVelocity.x) < 0.4 && Math.abs(panVelocity.y) < 0.4){ panMomentumRAF = null; return; }
-      wrap.scrollLeft += panVelocity.x;
+      if (zoom > fitZoom + 0.01) wrap.scrollLeft += panVelocity.x;
       wrap.scrollTop += panVelocity.y;
       panMomentumRAF = requestAnimationFrame(step);
     }
@@ -2720,17 +2740,22 @@
       pendingTwoFingerMove = null;
       if (!move) return;
       if (move.mode === 'zoompan'){
-        const newZoom = Math.min(4, Math.max(0.5, pinchStartZoom * (move.d / pinchStartDist)));
+        const newZoom = Math.min(MAX_ZOOM, Math.max(Math.min(MIN_ZOOM, fitZoom), pinchStartZoom * (move.d / pinchStartDist)));
         setZoomAnchored(newZoom, move.m.x, move.m.y);
       } else if (move.mode === 'scroll' && twoFingerLastMid){
         const dx = move.m.x - twoFingerLastMid.x, dy = move.m.y - twoFingerLastMid.y;
-        wrap.scrollLeft -= dx;
+        // A directly-assigned scrollLeft is a *scripted* scroll, which browsers allow even when
+        // overflow-x is hidden (hidden only blocks native/user-driven scrolling like wheel or
+        // touch-pan — not property writes from our own code). So at/below fit we must not touch
+        // scrollLeft at all here, or the page slides sideways even though it already fits.
+        const canPanX = zoom > fitZoom + 0.01;
+        if (canPanX) wrap.scrollLeft -= dx;
         wrap.scrollTop -= dy;
         const now = performance.now();
         const dt = Math.max(8, now - lastPanMoveTime);
         // Smoothed velocity in px/frame (~16ms), blended with the previous sample so a single
         // jittery touch reading can't spike the momentum on release.
-        const vx = -dx / dt * 16, vy = -dy / dt * 16;
+        const vx = canPanX ? (-dx / dt * 16) : 0, vy = -dy / dt * 16;
         panVelocity = { x: panVelocity.x * 0.5 + vx * 0.5, y: panVelocity.y * 0.5 + vy * 0.5 };
         lastPanMoveTime = now;
       }
@@ -2748,14 +2773,111 @@
   wrap.addEventListener('wheel', (e) => {
     if (!e.ctrlKey || zoomLocked) return;
     e.preventDefault();
-    const newZoom = Math.min(4, Math.max(0.5, zoom - e.deltaY * 0.01));
+    const newZoom = Math.min(MAX_ZOOM, Math.max(Math.min(MIN_ZOOM, fitZoom), zoom - e.deltaY * 0.01));
     setZoomAnchored(newZoom, e.clientX, e.clientY);
   }, {passive:false});
+
+  // Computes the zoom that exactly fits the current page's width inside the wrap viewport,
+  // accounting for the stage's own horizontal padding (16px each side, see #canvasStage).
+  // Unlike manual zoom, this is never floored at MIN_ZOOM — a page has to actually fit, even on
+  // a narrow phone screen, or "fit to screen" wouldn't mean anything.
+  function computeFitZoom(){
+    if (!activeNotebook) return 1;
+    const page = activeNotebook.pages[currentId] || activeNotebook.pages[activeNotebook.pageOrder[0]];
+    if (!page) return 1;
+    const size = pageSizeFor(page, activeNotebook);
+    const wrapRect = wrap.getBoundingClientRect();
+    const available = wrapRect.width - 32;
+    if (available <= 0 || !size.width) return 1;
+    return Math.min(MAX_ZOOM, Math.max(0.05, available / size.width));
+  }
 
   function applyZoom(){
     stage.style.transform = `scale(${zoom})`;
     zoomLabelEl.textContent = Math.round(zoom*100) + '%';
+    // Gap and top/bottom padding all live inside the scaled stage, so left alone they'd grow
+    // with zoom (huge gaps at 400%). Counter-scale them so the on-screen spacing between pages,
+    // and between the page stack and the toolbar/bottom edge, always reads as ~10px regardless
+    // of zoom level.
+    stage.style.gap = (10 / zoom) + 'px';
+    stage.style.paddingTop = (10 / zoom) + 'px';
+    stage.style.paddingBottom = (10 / zoom) + 'px';
+    layoutFrameMargins();
+    // At or below fit, the page always fits the viewport horizontally — lock horizontal
+    // scrolling off entirely so there's never any sideways slide (like Drive). Only once the
+    // user actually zooms in past fit do we open up horizontal panning.
+    wrap.style.overflowX = (zoom > fitZoom + 0.01) ? 'auto' : 'hidden';
+    clampScrollX();
+    clampScrollY();
   }
+  // Explicitly centers each page frame with a real margin-left (in unscaled px) instead of
+  // relying on flex align-items, which only knows the stage's own unscaled width and so can't
+  // express "shift right enough to center once zoomed out" — that would need a negative
+  // scrollLeft, which doesn't exist. A real margin bakes the correct centered position straight
+  // into layout, reachable at scrollLeft 0 with no scrolling needed.
+  function layoutFrameMargins(){
+    const wrapRect = wrap.getBoundingClientRect();
+    const stagePaddingLeft = 16; // matches #canvasStage's CSS padding-left
+    pageCanvases.forEach(pc => {
+      const frameWidth = pc.frame.offsetWidth; // layout (unscaled) width — transforms don't affect this
+      const margin = Math.max(0, (wrapRect.width / (2 * zoom)) - (frameWidth / 2) - stagePaddingLeft);
+      pc.frame.style.marginLeft = margin + 'px';
+    });
+  }
+  // Keeps horizontal scroll bounded to the current page's own rendered edges — not the stage's
+  // (much wider, empty) flex box. Without this, scrolling/panning could reveal the "desk"
+  // background beyond the page instead of stopping right at its edge, like Drive does.
+  function clampScrollX(){
+    const pc = pageCanvases.get(currentId);
+    if (!pc) { wrap.scrollLeft = 0; return; }
+    const wrapRect = wrap.getBoundingClientRect();
+    const frameRect = pc.frame.getBoundingClientRect();
+    // The frame's left edge in the scrollable content's own coordinate space — independent of
+    // the current scroll position, since we add wrap.scrollLeft back in to cancel it out.
+    const contentLeft = wrap.scrollLeft + (frameRect.left - wrapRect.left);
+    const pageWidth = frameRect.width;
+    let lo, hi;
+    if (pageWidth <= wrapRect.width + 0.5){
+      // Page narrower than the viewport: keep it centered, no sideways slack at all.
+      const centered = contentLeft - (wrapRect.width - pageWidth) / 2;
+      lo = hi = centered;
+    } else {
+      lo = contentLeft; // page's left edge flush with the viewport's left edge
+      hi = contentLeft + pageWidth - wrapRect.width; // page's right edge flush with viewport's right edge
+    }
+    if (wrap.scrollLeft < lo) wrap.scrollLeft = lo;
+    else if (wrap.scrollLeft > hi) wrap.scrollLeft = hi;
+  }
+  // Same idea, vertically — but bounded to the whole page STACK's rendered top/bottom (the
+  // stage's own box, padding included) rather than a single page, since scrolling down through
+  // several pages is normal. This just stops you overscrolling past the top/bottom padding
+  // (now a fixed ~10px "header"/"footer" gap) into empty space beyond it.
+  function clampScrollY(){
+    const stageRect = stage.getBoundingClientRect();
+    const wrapRect = wrap.getBoundingClientRect();
+    const contentTop = wrap.scrollTop + (stageRect.top - wrapRect.top);
+    const contentHeight = stageRect.height;
+    let lo, hi;
+    if (contentHeight <= wrapRect.height + 0.5){
+      // Everything fits vertically already: keep it centered, no scroll slack at all.
+      const centered = contentTop - (wrapRect.height - contentHeight) / 2;
+      lo = hi = centered;
+    } else {
+      lo = contentTop; // stack's top edge flush with the viewport's top edge
+      hi = contentTop + contentHeight - wrapRect.height; // stack's bottom edge flush with viewport's bottom edge
+    }
+    if (wrap.scrollTop < lo) wrap.scrollTop = lo;
+    else if (wrap.scrollTop > hi) wrap.scrollTop = hi;
+  }
+  // Last-resort safety net: overflow:hidden only blocks the browser's own native scroll
+  // gestures (wheel, touch-pan, scrollbar drag) — it does NOT block a scripted scrollLeft/Top
+  // assignment, which is exactly what pan/momentum code above does. So re-clamp on every scroll,
+  // from whatever gesture path caused it (present or future).
+  wrap.addEventListener('scroll', () => {
+    if (lassoSelection.length) updateLassoDeleteBtnPosition();
+    clampScrollX();
+    clampScrollY();
+  }, { passive: true });
 
   // Changes zoom while keeping whatever content was under (anchorClientX, anchorClientY) — or the
   // viewport center by default — visually fixed in place. Rather than assuming a particular
@@ -2764,7 +2886,9 @@
   // the zoom change and nudges scroll by the difference. That keeps it correct no matter how the
   // stage is centered, and is what actually prevents content from drifting to a corner.
   function setZoomAnchored(newZoom, anchorClientX, anchorClientY){
-    newZoom = Math.min(4, Math.max(0.5, newZoom));
+    // The floor is never allowed above fitZoom — otherwise a page that needs less than MIN_ZOOM
+    // to fit a narrow screen would get clamped back up past fit and start sliding sideways again.
+    newZoom = Math.min(MAX_ZOOM, Math.max(Math.min(MIN_ZOOM, fitZoom), newZoom));
     const wrapRect = wrap.getBoundingClientRect();
     const ax = (anchorClientX !== undefined) ? anchorClientX : (wrapRect.left + wrapRect.width/2);
     const ay = (anchorClientY !== undefined) ? anchorClientY : (wrapRect.top + wrapRect.height/2);
@@ -2779,8 +2903,8 @@
     const newScreenY = stageRectAfter.top + contentY * zoom;
     wrap.scrollLeft += (newScreenX - ax);
     wrap.scrollTop += (newScreenY - ay);
-    if (wrap.scrollWidth <= wrap.clientWidth + 1) wrap.scrollLeft = 0;
-    if (wrap.scrollHeight <= wrap.clientHeight + 1) wrap.scrollTop = 0;
+    clampScrollX();
+    clampScrollY();
   }
   function setZoom(z){ setZoomAnchored(z); } // anchored at viewport center — used by the zoom menu
 
@@ -2807,14 +2931,11 @@
       row.addEventListener('click', () => { setZoom(parseInt(row.dataset.p) / 100); zoomMenu.classList.add('hidden'); });
     });
     zoomMenu.querySelector('#zoomFit').addEventListener('click', () => {
+      fitZoom = computeFitZoom();
+      zoom = fitZoom;
+      applyZoom();
       const pc = pageCanvases.get(currentId);
-      if (pc){
-        const wrapRect = wrap.getBoundingClientRect();
-        const pageW = parseFloat(pc.canvas.style.width) || wrapRect.width;
-        const fitZoom = Math.min(4, Math.max(0.5, (wrapRect.width - 40) / pageW));
-        setZoom(fitZoom);
-        pc.frame.scrollIntoView({ behavior:'smooth', block:'start' });
-      }
+      if (pc) pc.frame.scrollIntoView({ behavior:'smooth', block:'start' });
       zoomMenu.classList.add('hidden');
     });
     zoomMenu.querySelector('#zoomLockRow').addEventListener('click', () => {
@@ -2987,10 +3108,6 @@
     updateLassoDeleteBtnPosition();
     const pc = pageCanvases.get(lassoSelPageId);
     if (pc) drawLassoOverlay(pc);
-  });
-  wrap.addEventListener('scroll', () => {
-    if (lassoSelection.length) updateLassoDeleteBtnPosition();
-    if (wrap.scrollWidth <= wrap.clientWidth + 1 && wrap.scrollLeft !== 0) wrap.scrollLeft = 0;
   });
 
   const SWATCH_COLORS = ['#1c2430', '#2f4fa8', '#b4483a', '#2f7a4f', '#e0a12c'];
@@ -3482,6 +3599,15 @@
   window.addEventListener('resize', () => {
     const newDpr = Math.max(window.devicePixelRatio || 1, 1);
     if (newDpr !== dpr && activeNotebook){ dpr = newDpr; renderPageStack(); }
+    if (activeNotebook && document.getElementById('editorView') && !document.getElementById('editorView').classList.contains('hidden')){
+      // Was sitting at fit (e.g. hasn't manually zoomed in) — recompute fit for the new viewport
+      // size (rotation, resize, keyboard opening, etc.) instead of leaving stale scale behind
+      // that could overflow horizontally again.
+      const wasAtFit = zoom <= fitZoom + 0.01;
+      fitZoom = computeFitZoom();
+      if (wasAtFit){ zoom = fitZoom; applyZoom(); }
+      else { applyZoom(); }
+    }
   });
 
   loadAll();
