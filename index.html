@@ -215,6 +215,10 @@
 
   /* ---- Editor (notebook open) — full-screen, single top toolbar ---- */
   #editorView { background: var(--paper); }
+  /* Briefly hidden right after opening a notebook, until the fit/fullscreen transition settles —
+     see openNotebook()'s reveal() — so that resize doesn't show up as a visible flash. */
+  #editorView.settling { opacity: 0; }
+  #editorView:not(.settling) { opacity: 1; transition: opacity 0.15s ease; }
   #editorTopbar {
     display:flex; align-items:center; gap:2px;
     padding: 6px 10px;
@@ -270,6 +274,14 @@
     background-image: repeating-conic-gradient(#d8d3c4 0% 25%, #efece2 0% 50%);
     background-size: 8px 8px;
   }
+  /* Eraser type toggles: which content types the eraser is allowed to touch */
+  .eraseTypeToggle {
+    display:flex; align-items:center; gap:5px; flex-shrink:0; cursor:pointer;
+    font-family:inherit; font-size:11px; color:#a39c86;
+    background: transparent; border:1.5px solid var(--paper-line); border-radius:999px;
+    padding:6px 11px; white-space:nowrap;
+  }
+  .eraseTypeToggle.active { color: var(--accent); border-color: var(--accent); background: rgba(107,127,215,0.10); }
   .swatch.active { border-color: var(--ink); transform: scale(1.08); }
   #widthSlider { width:64px; accent-color: var(--accent); flex-shrink:0; }
   #pageTitle {
@@ -294,6 +306,10 @@
   .popover .pRow .sub { color:#8a8474; font-size:11px; }
   .popover .pHeader { padding: 12px 14px 6px; font-size:11px; color:#a39c86; text-transform:uppercase; letter-spacing:0.05em; }
   .popover .pDivider { height:1px; background: var(--paper-line); margin: 4px 0; }
+  .addPagePlacementRow { justify-content:space-between; }
+  .addPagePlacementRow .pCheck { color: var(--accent); visibility:hidden; display:flex; }
+  .addPagePlacementRow.active { color: var(--accent); font-weight:600; }
+  .addPagePlacementRow.active .pCheck { visibility:visible; }
   #morePanel { min-width: 280px; max-width: 300px; }
   #morePanel .moreHeader { display:flex; gap:12px; padding: 14px; }
   #morePanel .moreThumb {
@@ -396,6 +412,69 @@
   .tmplBtn.primary { background: var(--accent); color:white; }
   .tmplBtn.secondary { background: rgba(107,127,215,0.12); color: var(--accent); }
 
+  /* Custom color picker modal (Grid / Spectrum, hex+RGB fields, eyedropper) */
+  #colorPickerModal {
+    position:absolute; inset:0; background: rgba(20,24,34,0.45);
+    display:flex; align-items:center; justify-content:center; z-index:40;
+  }
+  #colorPickerModal.hidden { display:none; }
+  #colorPickerCard {
+    background: var(--paper); border-radius:18px; width: min(360px, 92vw); max-height: 88vh;
+    display:flex; flex-direction:column; box-shadow: 0 20px 50px rgba(0,0,0,0.35); overflow:hidden;
+    padding: 18px 20px 16px;
+  }
+  #cpHead { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+  #cpHead h2 { font-size:18px; margin:0; font-weight:500; color: var(--ink); }
+  #cpEyedropper { border:none; background:transparent; cursor:pointer; color: var(--ink); padding:2px; display:flex; }
+  #cpTabs { display:flex; gap:8px; justify-content:center; margin-bottom:16px; }
+  .cpTab {
+    border:none; border-radius:8px; padding:9px 18px; font-size:13px; font-weight:600;
+    background: rgba(107,127,215,0.10); color: var(--ink-soft); cursor:pointer; font-family:inherit;
+  }
+  .cpTab.active { background: rgba(107,127,215,0.22); color: var(--accent); }
+  #cpGrid {
+    display:grid; grid-template-columns: repeat(12, 1fr); gap:1px;
+    border-radius:8px; overflow:hidden; aspect-ratio: 12/10;
+  }
+  #cpGrid .cpSwatch { position:relative; cursor:pointer; }
+  #cpGrid .cpSwatch.active::after {
+    content:''; position:absolute; inset:15%; border:2px solid #fff; border-radius:3px;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.35);
+  }
+  #cpSpectrumPane.hidden { display:none; }
+  #cpSvBox {
+    position:relative; width:100%; aspect-ratio: 4/3; border-radius:8px; overflow:hidden;
+    margin-bottom:14px; touch-action:none; cursor:crosshair;
+  }
+  #cpSvThumb {
+    position:absolute; width:18px; height:18px; margin-left:-9px; margin-top:-9px;
+    border:2px solid #fff; border-radius:50%; box-shadow: 0 0 0 1px rgba(0,0,0,0.4); pointer-events:none;
+  }
+  #cpHueSlider {
+    position:relative; width:100%; height:16px; border-radius:8px; margin-bottom:16px;
+    background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+    touch-action:none; cursor:pointer;
+  }
+  #cpHueThumb {
+    position:absolute; top:50%; width:20px; height:20px; margin-left:-10px; margin-top:-10px;
+    border:2px solid #fff; border-radius:50%; box-shadow: 0 0 0 1px rgba(0,0,0,0.4); pointer-events:none;
+  }
+  #cpBottomRow { display:flex; align-items:flex-end; gap:8px; margin-bottom:18px; }
+  #cpPreview { width:44px; height:44px; border-radius:50%; flex-shrink:0; border:1px solid var(--paper-line); }
+  .cpField { flex:1; display:flex; flex-direction:column; gap:4px; min-width:0; }
+  .cpField label { font-size:10px; color: var(--ink-soft); text-align:center; }
+  .cpFieldNum { flex: 0 0 44px; }
+  .cpField input {
+    border:none; border-radius:8px; background: rgba(107,127,215,0.10); color: var(--ink);
+    font-family:inherit; font-size:13px; text-align:center; padding:9px 4px; width:100%;
+  }
+  #cpFooter { display:flex; justify-content:flex-end; gap:22px; }
+  #cpFooter button {
+    border:none; background:transparent; cursor:pointer; font-family:inherit;
+    font-size:14px; font-weight:600; color: var(--ink-soft); padding:6px 4px;
+  }
+  #cpOk { color: var(--accent); }
+
   /* Radio-style settings rows (single/double finger) */
   .radioPanel { padding: 0 14px 12px 41px; }
   .radioGroupLabel { font-size:10.5px; color:#8a8474; text-transform:uppercase; letter-spacing:0.05em; margin: 6px 0 4px; }
@@ -421,8 +500,19 @@
   .pageCard .pageDelete:hover { color: var(--danger); }
   .pageCard.addTile .thumb { border: 2px dashed var(--paper-line); color:#a39c86; font-size:24px; box-shadow:none; background:transparent; }
   .pageCard.addTile:hover .thumb { border-color: var(--accent); color: var(--accent); }
+  /* After a ~3s hold, a card becomes freely draggable to reorder pages. */
+  .pageCard.dragging { z-index:5; opacity:0.92; }
+  .pageCard.dragging .thumb { transform: scale(1.08); box-shadow: 0 12px 26px rgba(0,0,0,0.3); border-color: var(--accent); }
+  .pageCard.holding .thumb { transition: box-shadow 0.2s ease; box-shadow: 0 0 0 2px var(--accent); }
 
   #editorBody { flex:1; position:relative; overflow:hidden; }
+  /* Follows the pointer while the eraser tool is active, sized to the current eraser diameter —
+     transparent fill so the page underneath stays visible, just an outline to show the reach. */
+  #eraserCursor {
+    position:absolute; border-radius:50%; pointer-events:none; z-index:8;
+    border:1.5px solid rgba(60,55,45,0.55); background: rgba(60,55,45,0.06);
+    transform:translate(-50%,-50%); display:none;
+  }
   #canvasWrap {
     position:absolute; inset:0; overflow:auto;
     background-color: #b9b2a0; /* "desk" area around pages, like a document canvas */
@@ -635,9 +725,34 @@
         <button class="ebtn" id="allPagesBtn" title="All pages">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
         </button>
-        <button class="ebtn" id="addPage" title="New page">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-        </button>
+        <div style="position:relative;">
+          <button class="ebtn" id="addPage" title="New page">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+          <div class="popover hidden" id="addPagePopover">
+            <div class="pRow" id="addPageNewRow">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><path d="M12 11v6M9 14h6"/></svg>
+              New page
+            </div>
+            <div class="pRow" id="addPageImportPdfRow">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><path d="M9 13h6M9 17h6"/></svg>
+              Import PDF
+            </div>
+            <div class="pDivider"></div>
+            <div class="pRow addPagePlacementRow" data-placement="after">
+              After current page
+              <span class="pCheck"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+            </div>
+            <div class="pRow addPagePlacementRow" data-placement="before">
+              Before current page
+              <span class="pCheck"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+            </div>
+            <div class="pRow addPagePlacementRow" data-placement="last">
+              Last page
+              <span class="pCheck"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+            </div>
+          </div>
+        </div>
         <div style="position:relative;">
           <button class="ebtn" id="recentBtn" title="Switch to recent notebooks">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M3 12l9 4 9-4"/></svg>
@@ -695,13 +810,13 @@
       </div>
       <div id="toolOptionsRow" class="hidden"></div>
       <input type="file" id="imageFileInput" accept="image/*" style="position:absolute;width:1px;height:1px;opacity:0;left:-9999px;">
-      <input type="color" id="customColorPicker" style="position:absolute;width:1px;height:1px;opacity:0;border:none;padding:0;left:-9999px;">
       <div class="popover hidden" id="recentPopover"></div>
       <div class="popover hidden" id="morePanel"></div>
       <div id="editorBody">
         <div id="canvasWrap">
           <div id="canvasStage"></div>
         </div>
+        <div id="eraserCursor"></div>
         <div id="statusPill">
           <span id="pageCounter">1/1</span>
           <span class="sep">·</span>
@@ -762,6 +877,56 @@
     </div>
   </div>
 
+  <div id="colorPickerModal" class="hidden">
+    <div id="colorPickerCard">
+      <div id="cpHead">
+        <button id="cpEyedropper" title="Pick from screen">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 22 1-4 9.5-9.5 3 3L6 21l-4 1Z"/><path d="m14.5 6.5 3-3a2.12 2.12 0 0 1 3 3l-3 3"/><path d="m12.5 8.5 3 3"/></svg>
+        </button>
+        <h2>Colors</h2>
+        <div style="width:20px"></div>
+      </div>
+      <div id="cpTabs">
+        <button class="cpTab active" id="cpTabGrid"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:-2px"><polyline points="20 6 9 17 4 12"/></svg>Grid</button>
+        <button class="cpTab" id="cpTabSpectrum">Spectrum</button>
+      </div>
+      <div id="cpGridPane">
+        <div id="cpGrid"></div>
+      </div>
+      <div id="cpSpectrumPane" class="hidden">
+        <div id="cpSvBox">
+          <div id="cpSvThumb"></div>
+        </div>
+        <div id="cpHueSlider">
+          <div id="cpHueThumb"></div>
+        </div>
+      </div>
+      <div id="cpBottomRow">
+        <div id="cpPreview"></div>
+        <div class="cpField">
+          <label>Hex</label>
+          <input id="cpHex" type="text" maxlength="7" spellcheck="false">
+        </div>
+        <div class="cpField cpFieldNum">
+          <label>R</label>
+          <input id="cpR" type="number" min="0" max="255">
+        </div>
+        <div class="cpField cpFieldNum">
+          <label>G</label>
+          <input id="cpG" type="number" min="0" max="255">
+        </div>
+        <div class="cpField cpFieldNum">
+          <label>B</label>
+          <input id="cpB" type="number" min="0" max="255">
+        </div>
+      </div>
+      <div id="cpFooter">
+        <button id="cpCancel">Cancel</button>
+        <button id="cpOk">OK</button>
+      </div>
+    </div>
+  </div>
+
   <div class="popover hidden" id="cardActionMenu"></div>
   <div id="customPromptOverlay" class="hidden">
     <div id="customPromptBox">
@@ -795,7 +960,11 @@
   // data.trash          = [ {trashId, type:'folder'|'notebook', deletedAt, data, folderName?} ... ]
   // data.settings        = { singleFinger:'ignored'|'draw'|'scroll', doubleFinger:'ignored'|'zoompan'|'scroll', palmRejection, defaultTemplate }
   // data.rootNotebookIds = [id...]  — notebooks that live directly on Home, not inside a folder
-  let data = { folders:{}, folderOrder:[], notebooks:{}, trash:[], rootNotebookIds:[], settings:{ singleFinger:'draw', doubleFinger:'zoompan', palmRejection:true, zoomLocked:false, penColor:'#1c2430', penWidth:2.5, eraserWidth: (827/21) * 1 } };
+  const DEFAULT_RECENT_COLORS = ['#1c2430', '#2f4fa8', '#b4483a', '#2f7a4f', '#e0a12c', '#8a5fb0'];
+  const DEFAULT_ERASE_TYPES = { pen:true, shapes:true, image:true, table:true };
+  const DEFAULT_TOOL_WIDTHS = { pen:2.5, pencil:2.5, highlighter:6, laser:6, shapes:2.5, table:2.5 };
+  const DEFAULT_NEW_PAGE_PLACEMENT = 'after';
+  let data = { folders:{}, folderOrder:[], notebooks:{}, trash:[], rootNotebookIds:[], settings:{ singleFinger:'draw', doubleFinger:'zoompan', palmRejection:true, zoomLocked:false, penColor:'#1c2430', toolWidths: {...DEFAULT_TOOL_WIDTHS}, eraserWidth: (827/21) * 1, recentColors: DEFAULT_RECENT_COLORS.slice(), eraseTypes: {...DEFAULT_ERASE_TYPES}, newPagePlacement: DEFAULT_NEW_PAGE_PLACEMENT } };
   let nav = { tab:'home', folderId:null, notebookId:null };
   let activeNotebook = null;
   let currentId = null;
@@ -875,6 +1044,57 @@
     }
   }
 
+  // Same rendering approach as importPdfAsNotebook, but adds the pages into the notebook that's
+  // already open (at the placement chosen in the New Page menu) instead of creating a new one.
+  async function importPdfIntoCurrentNotebook(file, placement){
+    const overlay = document.getElementById('importOverlay');
+    const msg = document.getElementById('importMsg');
+    if (!activeNotebook) return;
+    overlay.classList.remove('hidden');
+    msg.textContent = 'Reading PDF…';
+    try {
+      if (window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions){
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      }
+      const buf = await file.arrayBuffer();
+      const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+      const maxWidth = 1100;
+      const newIds = [];
+      for (let i = 1; i <= pdf.numPages; i++){
+        msg.textContent = `Importing page ${i} of ${pdf.numPages}…`;
+        const page = await pdf.getPage(i);
+        const baseViewport = page.getViewport({ scale: 1 });
+        const scale = Math.min(2, maxWidth / baseViewport.width);
+        const viewport = page.getViewport({ scale });
+        const off = document.createElement('canvas');
+        off.width = viewport.width; off.height = viewport.height;
+        const octx = off.getContext('2d');
+        await page.render({ canvasContext: octx, viewport }).promise;
+        const dataUrl = off.toDataURL('image/jpeg', 0.82);
+        const pid = uid();
+        activeNotebook.pages[pid] = newPageObj(dataUrl);
+        activeNotebook.pages[pid].title = `Page ${i}`;
+        activeNotebook.pages[pid].bgWidth = viewport.width;
+        activeNotebook.pages[pid].bgHeight = viewport.height;
+        newIds.push(pid);
+      }
+      const order = activeNotebook.pageOrder;
+      let insertAt;
+      if (placement === 'before' && currentId && order.includes(currentId)) insertAt = order.indexOf(currentId);
+      else if (placement === 'after' && currentId && order.includes(currentId)) insertAt = order.indexOf(currentId) + 1;
+      else insertAt = order.length;
+      order.splice(insertAt, 0, ...newIds);
+      scheduleSave();
+      renderPageStack();
+      if (newIds[0]) scrollToPage(newIds[0]);
+    } catch(err){
+      msg.textContent = 'Could not import that PDF.';
+      await new Promise(r => setTimeout(r, 1400));
+    } finally {
+      overlay.classList.add('hidden');
+    }
+  }
+
   // ---- Persistence ----
   // Real local storage so data survives closing the app — window.storage only exists inside
   // Claude.ai's artifact preview, not in a normal browser/webview, so relying on it alone meant
@@ -939,16 +1159,31 @@
       const raw = await storageGetRaw(STORAGE_KEY);
       if (raw){
         const parsed = JSON.parse(raw);
-        data = Object.assign({folders:{}, folderOrder:[], notebooks:{}, trash:[], rootNotebookIds:[], settings:{singleFinger:'draw', doubleFinger:'zoompan', palmRejection:true, zoomLocked:false, penColor:'#1c2430', penWidth:2.5, eraserWidth:(827/21)*1}}, parsed);
+        data = Object.assign({folders:{}, folderOrder:[], notebooks:{}, trash:[], rootNotebookIds:[], settings:{singleFinger:'draw', doubleFinger:'zoompan', palmRejection:true, zoomLocked:false, penColor:'#1c2430', toolWidths: {...DEFAULT_TOOL_WIDTHS}, eraserWidth:(827/21)*1, recentColors: DEFAULT_RECENT_COLORS.slice(), eraseTypes: {...DEFAULT_ERASE_TYPES}, newPagePlacement: DEFAULT_NEW_PAGE_PLACEMENT}}, parsed);
         if (!data.rootNotebookIds) data.rootNotebookIds = [];
-        if (!data.settings) data.settings = { singleFinger:'draw', doubleFinger:'zoompan', palmRejection:true, zoomLocked:false, penColor:'#1c2430', penWidth:2.5, eraserWidth:(827/21)*1 };
+        if (!data.settings) data.settings = { singleFinger:'draw', doubleFinger:'zoompan', palmRejection:true, zoomLocked:false, penColor:'#1c2430', toolWidths: {...DEFAULT_TOOL_WIDTHS}, eraserWidth:(827/21)*1, recentColors: DEFAULT_RECENT_COLORS.slice(), eraseTypes: {...DEFAULT_ERASE_TYPES}, newPagePlacement: DEFAULT_NEW_PAGE_PLACEMENT };
         if (!data.settings.singleFinger) data.settings.singleFinger = 'draw';
         if (!data.settings.doubleFinger) data.settings.doubleFinger = 'zoompan';
-        // Carry the remembered pen colour/size, eraser size, and lock-zoom state into the live
-        // tool variables — this only runs once at startup (after `let tool/color/width/...` above
-        // have already been initialized), so it's safe to overwrite them here.
+        if (!Array.isArray(data.settings.recentColors) || !data.settings.recentColors.length) data.settings.recentColors = DEFAULT_RECENT_COLORS.slice();
+        if (!data.settings.eraseTypes) data.settings.eraseTypes = {...DEFAULT_ERASE_TYPES};
+        else ['pen','shapes','image','table'].forEach(k => { if (typeof data.settings.eraseTypes[k] !== 'boolean') data.settings.eraseTypes[k] = true; });
+        if (data.settings.newPagePlacement !== 'after' && data.settings.newPagePlacement !== 'before' && data.settings.newPagePlacement !== 'last'){
+          data.settings.newPagePlacement = DEFAULT_NEW_PAGE_PLACEMENT;
+        }
+        // Each drawing tool remembers its own width independently (pen/pencil/highlighter/laser/
+        // shapes/table) — migrate an old single `penWidth` value (pre-per-tool-widths) into the
+        // 'pen' slot so nobody's existing pen size gets silently reset.
+        if (!data.settings.toolWidths) data.settings.toolWidths = {...DEFAULT_TOOL_WIDTHS};
+        else Object.keys(DEFAULT_TOOL_WIDTHS).forEach(k => { if (typeof data.settings.toolWidths[k] !== 'number') data.settings.toolWidths[k] = DEFAULT_TOOL_WIDTHS[k]; });
+        if (typeof data.settings.penWidth === 'number' && !data.settings._migratedPenWidth){
+          data.settings.toolWidths.pen = data.settings.penWidth;
+          data.settings._migratedPenWidth = true;
+        }
+        toolWidths = data.settings.toolWidths;
+        // Carry the remembered pen colour, eraser size, and lock-zoom state into the live
+        // tool variables — this only runs once at startup (after `let tool/color/toolWidths/...`
+        // above have already been initialized), so it's safe to overwrite them here.
         if (data.settings.penColor) color = data.settings.penColor;
-        if (typeof data.settings.penWidth === 'number') width = data.settings.penWidth;
         if (typeof data.settings.eraserWidth === 'number') eraserWidth = data.settings.eraserWidth;
         if (typeof data.settings.zoomLocked === 'boolean') zoomLocked = data.settings.zoomLocked;
       }
@@ -1170,11 +1405,17 @@
   }
 
   const pdfFileInput = document.getElementById('pdfFileInput');
+  // The same file input is shared by "Import PDF" from the home screen (makes a new notebook)
+  // and from inside a notebook's New Page menu (adds pages into the notebook you're already in)
+  // — this flag tells the one 'change' handler below which behavior to run.
+  let pdfImportMode = 'newNotebook'; // 'newNotebook' | 'currentNotebook'
+  let pdfImportPlacement = 'after';
   pdfFileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     pdfFileInput.value = '';
     if (!file) return;
-    await importPdfAsNotebook(file);
+    if (pdfImportMode === 'currentNotebook') await importPdfIntoCurrentNotebook(file, pdfImportPlacement);
+    else await importPdfAsNotebook(file);
   });
 
   function renderTrash(){
@@ -1438,7 +1679,7 @@
       const cached = imageObjCache.get(src);
       if (!cached || !cached.complete) imageObjCache.set(src, await loadImageAsync(src));
     }
-    const lockedProtected = page.strokes.filter(s => (s.tool === 'image' || s.tool === 'table') && s.locked);
+    const lockedProtected = page.strokes.filter(s => isEraseProtected(s));
     for (const stroke of page.strokes){
       if (stroke.tool === 'eraser' && lockedProtected.length) eraseWithProtection(inkCtx, stroke, lockedProtected);
       else drawFullStroke(inkCtx, stroke, null);
@@ -1586,6 +1827,7 @@
   });
   document.getElementById('fabImportPdf').addEventListener('click', () => {
     fabMenu.classList.add('hidden');
+    pdfImportMode = 'newNotebook';
     pdfFileInput.click();
   });
   document.getElementById('fabNewNote').addEventListener('click', () => {
@@ -1612,6 +1854,20 @@
 
   // ================= Notebook editor (continuous scroll, Word-style) =================
   const wrap = document.getElementById('canvasWrap');
+  const eraserCursorEl = document.getElementById('eraserCursor');
+  function updateEraserCursor(clientX, clientY){
+    if (tool !== 'eraser'){ eraserCursorEl.style.display = 'none'; return; }
+    const wrapRect = wrap.getBoundingClientRect();
+    const size = Math.max(4, eraserWidth * zoom);
+    eraserCursorEl.style.width = size + 'px';
+    eraserCursorEl.style.height = size + 'px';
+    eraserCursorEl.style.left = (clientX - wrapRect.left) + 'px';
+    eraserCursorEl.style.top = (clientY - wrapRect.top) + 'px';
+    eraserCursorEl.style.display = 'block';
+  }
+  wrap.addEventListener('pointermove', (e) => updateEraserCursor(e.clientX, e.clientY));
+  wrap.addEventListener('pointerdown', (e) => updateEraserCursor(e.clientX, e.clientY));
+  wrap.addEventListener('pointerleave', () => { eraserCursorEl.style.display = 'none'; });
   const stage = document.getElementById('canvasStage');
   const titleEl = document.getElementById('pageTitle');
   const pageCounterEl = document.getElementById('pageCounter');
@@ -1643,10 +1899,17 @@
 
   let tool = 'pen';
   let color = '#1c2430';
-  let width = 2.5;
+  // Each drawing tool remembers its own width independently (pen/pencil/highlighter/laser/
+  // shapes/table) instead of sharing one — widthCategoryFor() maps a tool to its slot.
+  let toolWidths = {...DEFAULT_TOOL_WIDTHS};
+  function widthCategoryFor(t){
+    if (SHAPE_TOOLS.has(t)) return 'shapes';
+    if (t === 'pen' || t === 'pencil' || t === 'highlighter' || t === 'laser' || t === 'table') return t;
+    return 'pen';
+  }
   // A4 is defined as 827px for a real 21cm width, so that ratio is this app's px-per-cm baseline.
   const PX_PER_CM = 827 / 21;
-  let eraserWidth = PX_PER_CM * 1; // default 1cm — kept separate from `width` so switching tools never bleeds sizes into each other
+  let eraserWidth = PX_PER_CM * 1; // default 1cm — kept separate from tool widths so switching tools never bleeds sizes into each other
   let drawing = false;
   let currentStroke = null;
   let zoom = 1;
@@ -1674,7 +1937,17 @@
     if (!data.recentNotebooks) data.recentNotebooks = [];
     data.recentNotebooks = [id, ...data.recentNotebooks.filter(r => r !== id)].slice(0, 6);
     document.getElementById('browserView').classList.add('hidden');
-    document.getElementById('editorView').classList.remove('hidden');
+    const editorViewEl = document.getElementById('editorView');
+    // Hidden (not just "about to render") until the fit/fullscreen settle below finishes — masks
+    // the brief re-fit that happens once fullscreen actually kicks in (which resolves async and
+    // can arrive a beat after the page is first laid out), so it reads as one clean open instead
+    // of a flash of the wrong size.
+    editorViewEl.classList.add('settling');
+    editorViewEl.classList.remove('hidden');
+    // Push a history entry so the very next back action (hardware button, edge swipe, or the UI
+    // back button) closes just this notebook instead of leaving the app — see the popstate
+    // handler near backBtn.
+    try { history.pushState({ editor:true, notebookId:id }, '', location.href); editorHistoryPushed = true; } catch(e){}
     document.getElementById('tabRail').classList.add('hidden');
     zoomLocked = !!data.settings.zoomLocked;
     try {
@@ -1686,21 +1959,58 @@
     // the screen (which is what caused the horizontal slide on narrow/mobile viewports).
     fitZoom = computeFitZoom();
     zoom = fitZoom;
-    applyZoom();
+    // Render the NEW notebook's pages first, THEN scale/position them. Doing it the other way
+    // around (as this used to) ran applyZoom() — which lays out margins and clamps scroll — while
+    // pageCanvases/stage still held the PREVIOUSLY open notebook's frames (renderPageStack()
+    // hadn't cleared them yet), so those stale frames would visibly jump/resize for a frame right
+    // before being wiped and replaced. That flash was the open glitch.
     renderPageStack();
+    applyZoom();
     wrap.scrollTop = 0; clampScrollX(); clampScrollY(); // frame exists now, so these can actually center it
     showStatusPill(); // brief show-then-fade so the page count is visible right on open too
     updateScrubPosition();
     updateActivePageUI();
     scheduleSave();
+    // Reveal once the fullscreen transition has settled (fullscreenchange), or after a short
+    // fallback delay if fullscreen never fires one (denied, unsupported, already fullscreen) —
+    // whichever comes first.
+    let revealed = false;
+    const reveal = () => {
+      if (revealed) return;
+      revealed = true;
+      editorViewEl.classList.remove('settling');
+      document.removeEventListener('fullscreenchange', reveal);
+    };
+    document.addEventListener('fullscreenchange', reveal);
+    setTimeout(reveal, 220);
   }
 
   document.getElementById('backBtn').addEventListener('click', () => {
+    // Goes through history.back() (which triggers the popstate handler below to actually do the
+    // closing) instead of closing directly here, so hardware/gesture back and this UI button both
+    // run through the exact same code path and stay in sync with the pushed history entry.
+    if (editorHistoryPushed){ history.back(); }
+    else { closeNotebookEditor(); }
+  });
+  let editorHistoryPushed = false;
+  function closeNotebookEditor(){
     nav.notebookId = null;
     if (document.fullscreenElement){
       try { document.exitFullscreen().catch(()=>{}); } catch(e){}
     }
     showBrowser();
+  }
+  // A notebook/PDF is a "screen" of its own from the user's point of view — back should close
+  // it and return to the browser, not exit the app. Since openNotebook() pushes a history entry
+  // when opening, the FIRST back press (hardware button, edge gesture, or this listener) just
+  // pops that entry (handled here, staying on the same page) instead of leaving the app; only a
+  // back press from the browser/home screen (which never pushed anything) reaches the browser's
+  // own default back behavior.
+  window.addEventListener('popstate', () => {
+    if (editorHistoryPushed && !document.getElementById('editorView').classList.contains('hidden')){
+      editorHistoryPushed = false;
+      closeNotebookEditor();
+    }
   });
 
   // ---- Page sizing: PDF-imported pages use their own natural size; regular pages use the notebook's page-size preset ----
@@ -1724,11 +2034,85 @@
   // instead of a freehand path — they don't use TOOL_STYLE (no pressure/tapering), so they fall
   // back to the plain pen look (solid ink, source-over) inside setupStrokeStyle.
   const SHAPE_TOOLS = new Set(['shapeLine', 'shapeRect', 'shapeCircle', 'shapeTriangle', 'shapeArrow']);
+  // Which of the eraser's 4 type toggles a stroke falls under — null for anything not covered
+  // by those toggles (text, laser, the eraser's own marks), which always stays erasable as before.
+  function eraseCategoryOf(s){
+    if (!s || s.tool === 'eraser') return null;
+    if (s.tool === 'image') return 'image';
+    if (s.tool === 'table') return 'table';
+    if (SHAPE_TOOLS.has(s.tool)) return 'shapes';
+    if (s.points) return 'pen'; // freehand ink: pen, pencil, highlighter
+    return null;
+  }
+  // A stroke is protected from the eraser if it's individually locked, OR its whole type has
+  // been switched off in the eraser's type toggles (Pen/Shapes/Image/Table).
+  function isEraseProtected(s){
+    if (s.locked) return true;
+    const cat = eraseCategoryOf(s);
+    if (!cat) return false;
+    return !!(data.settings.eraseTypes && data.settings.eraseTypes[cat] === false);
+  }
 
   // Tap tools stamp a single pre-configured object at the tapped point — no drag, no points array.
   // Drag tools (shapes + table + image) are all sized the same way: drag from a start corner to
   // wherever the pointer currently is, with a live full-redraw preview each move.
   const DRAG_TOOLS = new Set(['shapeLine', 'shapeRect', 'shapeCircle', 'shapeTriangle', 'shapeArrow', 'table', 'image']);
+  // Angle display + auto-straighten for the Line shape — measured counter-clockwise from the
+  // horizontal (screen "up" = positive), which is what the on-screen angle readout reflects.
+  const LINE_SNAP_ANGLES = [0, 45, 90, 135, 180, 225, 270, 315];
+  const LINE_SNAP_THRESHOLD = 4; // degrees — how close before it locks onto a snap angle
+  function lineAngleDeg(x1, y1, x2, y2){
+    let deg = Math.atan2(-(y2-y1), x2-x1) * 180 / Math.PI;
+    if (deg < 0) deg += 360;
+    return deg;
+  }
+  function nearestSnapAngle(deg){
+    let nearest = LINE_SNAP_ANGLES[0], best = Infinity;
+    LINE_SNAP_ANGLES.forEach(s => {
+      let diff = Math.abs(deg - s); if (diff > 180) diff = 360 - diff;
+      if (diff < best){ best = diff; nearest = s; }
+    });
+    return { angle: nearest, diff: best };
+  }
+  // Snaps the line's endpoint onto the nearest of the 8 common angles once the drag gets close
+  // enough to one — same idea as how PowerPoint/Keynote straighten a line automatically.
+  function snapLineAngle(stroke){
+    const dx = stroke.x2 - stroke.x1, dy = stroke.y2 - stroke.y1;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 4) return;
+    const deg = lineAngleDeg(stroke.x1, stroke.y1, stroke.x2, stroke.y2);
+    const { angle, diff } = nearestSnapAngle(deg);
+    if (diff <= LINE_SNAP_THRESHOLD){
+      const rad = angle * Math.PI / 180;
+      stroke.x2 = stroke.x1 + Math.cos(rad) * dist;
+      stroke.y2 = stroke.y1 - Math.sin(rad) * dist;
+    }
+  }
+  // Draws the dashed guide (toward whichever of the 8 angles is currently closest) plus the
+  // live angle readout, on the page's overlay canvas so it never touches the actual ink.
+  function drawLineAngleOverlay(pc, stroke){
+    const c = pc.laserCtx;
+    c.clearRect(0, 0, pc.laserCanvas.width, pc.laserCanvas.height);
+    const dx = stroke.x2 - stroke.x1, dy = stroke.y2 - stroke.y1;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 4) return;
+    const deg = lineAngleDeg(stroke.x1, stroke.y1, stroke.x2, stroke.y2);
+    const { angle: nearest } = nearestSnapAngle(deg);
+    const guideLen = dist * 1.2 + 40;
+    const rad = nearest * Math.PI / 180;
+    const gx = stroke.x1 + Math.cos(rad) * guideLen;
+    const gy = stroke.y1 - Math.sin(rad) * guideLen;
+    c.save();
+    c.strokeStyle = 'rgba(217,73,63,0.85)';
+    c.lineWidth = 1.2; c.setLineDash([5,5]);
+    c.beginPath(); c.moveTo(stroke.x1, stroke.y1); c.lineTo(gx, gy); c.stroke();
+    c.setLineDash([]);
+    c.fillStyle = '#d9493f';
+    c.font = '13px sans-serif';
+    c.textAlign = 'left'; c.textBaseline = 'top';
+    c.fillText((deg % 90).toFixed(1) + '°', stroke.x1 - 10, stroke.y1 + 14);
+    c.restore();
+  }
 
   function effectivePressure(stroke, p){
     if (stroke.tool === 'eraser') return 1; // eraser size is fixed by the picker, never scaled by touch/pen pressure
@@ -1763,7 +2147,95 @@
   }
 
   // Laser pointer: three passes (soft outer glow, brighter mid glow, hot white core) for a
-  // neon-trail look instead of a plain thin line.
+  // A fixed width — the reference look has no size option, so laser strokes always use this.
+  const LASER_WIDTH = 5;
+  // Paints ONE laser stroke's layers onto the given context — glow (soft, blurred), a crisp red
+  // core (no blur, so its edge stays sharp against the glow), and a crisp thin white center line.
+  // Used by redrawAllLaserStrokes() below so multiple strokes can share one canvas without
+  // re-clearing each other out.
+  function paintLaserStrokeLayers(c, stroke){
+    const pts = stroke.points;
+    if (!pts.length) return;
+    // Divide by zoom so the laser's on-screen size stays constant regardless of zoom level — the
+    // whole page is visually scaled by the CSS zoom transform, so drawing it at a canvas-space
+    // width that shrinks/grows inversely cancels that out.
+    const baseW = (stroke.width || LASER_WIDTH) / (zoom > 0 ? zoom : 1);
+    const glowBlur = 14 / (zoom > 0 ? zoom : 1); // shadowBlur is also in canvas-space and scales with the stage transform
+    c.save();
+    c.lineCap = 'round'; c.lineJoin = 'round';
+    c.globalCompositeOperation = 'source-over';
+    if (pts.length < 2){
+      const p = pts[0];
+      c.shadowColor = '#ff3b30'; c.shadowBlur = glowBlur;
+      c.fillStyle = 'rgba(255,59,48,0.45)';
+      c.beginPath(); c.arc(p.x, p.y, baseW * 1.1, 0, Math.PI*2); c.fill();
+      c.shadowBlur = 0;
+      c.fillStyle = '#ff2d20';
+      c.beginPath(); c.arc(p.x, p.y, baseW * 0.55, 0, Math.PI*2); c.fill();
+      c.fillStyle = '#fff';
+      c.beginPath(); c.arc(p.x, p.y, Math.max(1, baseW * 0.16), 0, Math.PI*2); c.fill();
+      c.restore();
+      return;
+    }
+    c.beginPath();
+    c.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length - 1; i++){
+      const m = mid(pts[i], pts[i+1]);
+      c.quadraticCurveTo(pts[i].x, pts[i].y, m.x, m.y);
+    }
+    const last = pts[pts.length - 1];
+    c.lineTo(last.x, last.y);
+    // Soft glow, blurred and translucent — the only layer with any blur. Kept tight (small blur
+    // radius, modest width) so it reads as a glow around the line, not a wide haze.
+    c.shadowColor = '#ff3b30';
+    c.shadowBlur = glowBlur; c.strokeStyle = 'rgba(255,59,48,0.42)'; c.lineWidth = baseW * 2.2;
+    c.stroke();
+    // Crisp, fully-opaque red core — no blur, so it reads as a sharp line inside the soft halo.
+    c.shadowBlur = 0; c.strokeStyle = '#ff2d20'; c.lineWidth = baseW * 1.1;
+    c.stroke();
+    // Crisp thin white line straight down the middle.
+    c.strokeStyle = '#ffffff'; c.lineWidth = Math.max(1, baseW * 0.3);
+    c.stroke();
+    c.restore();
+  }
+  // Every laser stroke currently on screen — NOT cleared when a new one starts, so drawing
+  // several lines one after another keeps all of them visible together. They're all cleared (via
+  // a fade-out) together too, 1s after the last time any of them was drawn or touched.
+  let laserStrokes = [];
+  let laserFadeAlpha = 1;
+  let laserFadeRAF = null;
+  function redrawAllLaserStrokes(pageId){
+    const pc = pageCanvases.get(pageId);
+    if (!pc) return;
+    const c = pc.laserCtx;
+    c.clearRect(0, 0, c.canvas.width, c.canvas.height);
+    if (!laserStrokes.length) return;
+    c.save();
+    c.globalAlpha = laserFadeAlpha;
+    laserStrokes.forEach(s => paintLaserStrokeLayers(c, s));
+    c.restore();
+  }
+  // Fades every current laser stroke out together over ~450ms, then clears them for good.
+  function startLaserFadeOut(pageId){
+    const FADE_MS = 450;
+    const t0 = performance.now();
+    function step(now){
+      const t = Math.min(1, (now - t0) / FADE_MS);
+      laserFadeAlpha = 1 - t;
+      redrawAllLaserStrokes(pageId);
+      if (t < 1){
+        laserFadeRAF = requestAnimationFrame(step);
+      } else {
+        laserStrokes = [];
+        laserFadeAlpha = 1;
+        laserFadeRAF = null;
+        const pc = pageCanvases.get(pageId);
+        if (pc) pc.laserCtx.clearRect(0, 0, pc.laserCanvas.width, pc.laserCanvas.height);
+      }
+    }
+    laserFadeRAF = requestAnimationFrame(step);
+  }
+
   function drawLaserSegment(c, stroke){
     const pts = stroke.points;
     const n = pts.length;
@@ -1791,6 +2263,8 @@
       if (midp) c.quadraticCurveTo(midp.x, midp.y, end.x, end.y);
       else c.lineTo(end.x, end.y);
     };
+    // Soft outer glow, then a solid red core, then a thin bright-white line straight down the
+    // middle — a red tube with a white "hot core", per the reference look.
     c.shadowColor = '#ff3b30';
     c.shadowBlur = 26; c.strokeStyle = 'rgba(255,59,48,0.5)'; c.lineWidth = baseW * 2.4;
     tracePath(); c.stroke();
@@ -1805,7 +2279,7 @@
     if (stroke.tool === 'laser'){ drawLaserSegment(c, stroke); return; }
     if (stroke.tool === 'eraser' && activePageId && activeNotebook){
       const page = activeNotebook.pages[activePageId];
-      const locked = page ? page.strokes.filter(s => (s.tool === 'image' || s.tool === 'table') && s.locked) : [];
+      const locked = page ? page.strokes.filter(s => isEraseProtected(s)) : [];
       if (locked.length){
         const pts = stroke.points, recent = pts.slice(-3);
         let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
@@ -2053,6 +2527,12 @@
   }
 
   function strokeRectBounds(s){
+    if (s.points && s.points.length){
+      let x1=Infinity, y1=Infinity, x2=-Infinity, y2=-Infinity;
+      const pad = (s.width || 4) / 2;
+      s.points.forEach(p => { x1=Math.min(x1,p.x); y1=Math.min(y1,p.y); x2=Math.max(x2,p.x); y2=Math.max(y2,p.y); });
+      return { x1: x1-pad, y1: y1-pad, x2: x2+pad, y2: y2+pad };
+    }
     return {
       x1: Math.min(s.x1, s.x2), y1: Math.min(s.y1, s.y2),
       x2: Math.max(s.x1, s.x2), y2: Math.max(s.y1, s.y2)
@@ -2092,7 +2572,7 @@
     pc.ctx.clearRect(0, 0, pc.canvas.width, pc.canvas.height);
     const page = activeNotebook.pages[pageId];
     if (!page) return;
-    const lockedProtected = page.strokes.filter(s => (s.tool === 'image' || s.tool === 'table') && s.locked);
+    const lockedProtected = page.strokes.filter(s => isEraseProtected(s));
     for (const stroke of page.strokes){
       if (stroke.tool === 'eraser' && lockedProtected.length){
         eraseWithProtection(pc.ctx, stroke, lockedProtected);
@@ -2279,11 +2759,36 @@
   }
 
   // ---- Lasso: freehand-encircle to select existing strokes, then drag the selection to move it ----
-  let lassoMode = null; // null | 'drawing' | 'dragging'
+  let lassoMode = null; // null | 'drawing' | 'dragging' | 'resizing'
   let lassoPath = [];
   let lassoSelection = [];
   let lassoSelPageId = null;
   let lassoDragLast = null;
+  let lassoResizeHandle = null; // 'nw'|'ne'|'sw'|'se' while lassoMode === 'resizing'
+  let lassoResizeStroke = null; // the single stroke object being resized (bounds mutated live)
+  const RESIZE_HANDLE_HIT = 14; // canvas px — generous hit radius so a fingertip can grab a corner
+  function resizeHandlePoints(b){
+    return {
+      nw: { x:b.x-6, y:b.y-6 }, ne: { x:b.x+b.w+6, y:b.y-6 },
+      sw: { x:b.x-6, y:b.y+b.h+6 }, se: { x:b.x+b.w+6, y:b.y+b.h+6 }
+    };
+  }
+  function hitTestResizeHandle(pos, b){
+    const handles = resizeHandlePoints(b);
+    for (const key in handles){
+      const h = handles[key];
+      if (Math.abs(pos.x-h.x) <= RESIZE_HANDLE_HIT && Math.abs(pos.y-h.y) <= RESIZE_HANDLE_HIT) return key;
+    }
+    return null;
+  }
+  // Only single, unlocked, box-shaped objects (image/table/shapes — anything with x1/y1/x2/y2)
+  // are resizable this way; freehand ink and text don't have a rectangular bounds to drag.
+  function resizableSingleSelection(page){
+    if (lassoSelection.length !== 1) return null;
+    const s = page.strokes[lassoSelection[0]];
+    if (!s || s.locked || s.x1 === undefined) return null;
+    return s;
+  }
 
   function strokeRefPoints(s){
     if (s.points && s.points.length) return s.points;
@@ -2382,6 +2887,22 @@
         c.strokeStyle = anyLocked ? '#8a6d3b' : '#6b7fd7'; c.lineWidth = 1.5; c.setLineDash([6,4]);
         c.strokeRect(b.x-6, b.y-6, b.w+12, b.h+12);
         c.restore();
+        const resizable = resizableSingleSelection(page);
+        if (resizable){
+          const handles = resizeHandlePoints(b);
+          c.save();
+          c.setLineDash([]);
+          c.fillStyle = '#ffffff';
+          c.strokeStyle = '#6b7fd7';
+          c.lineWidth = 1.5;
+          const HS = 7; // half-size of the drawn handle square, in canvas px
+          Object.values(handles).forEach(h => {
+            c.beginPath();
+            c.rect(h.x-HS, h.y-HS, HS*2, HS*2);
+            c.fill(); c.stroke();
+          });
+          c.restore();
+        }
       }
     }
     updateLassoDeleteBtnPosition();
@@ -2390,6 +2911,7 @@
     if (!lassoSelection.length && lassoMode !== 'drawing') return;
     const pid = lassoSelPageId;
     lassoSelection = []; lassoSelPageId = null; lassoMode = null; lassoPath = [];
+    lassoResizeHandle = null; lassoResizeStroke = null;
     const pc = pid ? pageCanvases.get(pid) : null;
     if (pc) pc.laserCtx.clearRect(0,0,pc.laserCanvas.width,pc.laserCanvas.height);
     document.getElementById('lassoActionBar').classList.add('hidden');
@@ -2398,6 +2920,16 @@
     if (lassoSelection.length && lassoSelPageId === pageId){
       const page = activeNotebook.pages[pageId];
       const b = selectionBBox(page);
+      const resizable = resizableSingleSelection(page);
+      if (resizable){
+        const handle = hitTestResizeHandle(pos, b);
+        if (handle){
+          lassoMode = 'resizing';
+          lassoResizeHandle = handle;
+          lassoResizeStroke = resizable;
+          return;
+        }
+      }
       if (pos.x >= b.x-6 && pos.x <= b.x+b.w+6 && pos.y >= b.y-6 && pos.y <= b.y+b.h+6){
         lassoMode = 'dragging';
         lassoDragLast = pos;
@@ -2411,6 +2943,21 @@
   function handleLassoMove(pageId, pos){
     const pc = pageCanvases.get(pageId);
     if (!pc) return;
+    if (lassoMode === 'resizing'){
+      const s = lassoResizeStroke;
+      if (!s) return;
+      const MIN = 16; // smallest allowed box, in canvas px, so a corner can't be dragged past its opposite one
+      let left = Math.min(s.x1, s.x2), right = Math.max(s.x1, s.x2);
+      let top = Math.min(s.y1, s.y2), bottom = Math.max(s.y1, s.y2);
+      if (lassoResizeHandle === 'nw'){ left = Math.min(pos.x, right-MIN); top = Math.min(pos.y, bottom-MIN); }
+      else if (lassoResizeHandle === 'ne'){ right = Math.max(pos.x, left+MIN); top = Math.min(pos.y, bottom-MIN); }
+      else if (lassoResizeHandle === 'sw'){ left = Math.min(pos.x, right-MIN); bottom = Math.max(pos.y, top+MIN); }
+      else if (lassoResizeHandle === 'se'){ right = Math.max(pos.x, left+MIN); bottom = Math.max(pos.y, top+MIN); }
+      s.x1 = left; s.y1 = top; s.x2 = right; s.y2 = bottom;
+      redrawPage(pageId);
+      drawLassoOverlay(pc);
+      return;
+    }
     if (lassoMode === 'dragging'){
       const page = activeNotebook.pages[pageId];
       if (!page) return;
@@ -2429,6 +2976,12 @@
   function handleLassoUp(pageId){
     const pc = pageCanvases.get(pageId);
     const page = activeNotebook.pages[pageId];
+    if (lassoMode === 'resizing'){
+      lassoMode = null; lassoResizeHandle = null; lassoResizeStroke = null;
+      if (page){ page.redo = []; scheduleSave(); }
+      if (pc) drawLassoOverlay(pc);
+      return;
+    }
     if (lassoMode === 'dragging'){
       lassoMode = null;
       if (page){ page.redo = []; scheduleSave(); }
@@ -2485,7 +3038,29 @@
     const s = page && page.strokes[strokeIndex];
     if (!s || s.tool !== 'image') return;
     clearLassoSelection();
-    cropState = { pageId, strokeIndex, imgBounds: { x1:s.x1, y1:s.y1, x2:s.x2, y2:s.y2 }, drag: null };
+    const img = imageObjCache.get(s.src);
+    // Remember exactly what's on the page right now, so cancelling puts it back untouched.
+    const prevCropRect = s.cropRect ? {...s.cropRect} : null;
+    const prevBounds = { x1:s.x1, y1:s.y1, x2:s.x2, y2:s.y2 };
+    let imgBounds = { x1:s.x1, y1:s.y1, x2:s.x2, y2:s.y2 };
+    if (img && img.complete && s.cropRect && s.cropRect.sw > 0 && s.cropRect.sh > 0){
+      // A crop was already applied — expand back out to the FULL original image extent (at the
+      // same on-page scale) so the whole photo is visible and re-croppable from scratch, instead
+      // of only being able to crop within whatever was left of the last crop.
+      const cr = s.cropRect;
+      const dispW = Math.abs(s.x2 - s.x1), dispH = Math.abs(s.y2 - s.y1);
+      const pxPerSrcX = dispW / cr.sw, pxPerSrcY = dispH / cr.sh;
+      const dispX1 = Math.min(s.x1, s.x2), dispY1 = Math.min(s.y1, s.y2);
+      const fullX1 = dispX1 - cr.sx * pxPerSrcX;
+      const fullY1 = dispY1 - cr.sy * pxPerSrcY;
+      imgBounds = { x1: fullX1, y1: fullY1, x2: fullX1 + img.naturalWidth * pxPerSrcX, y2: fullY1 + img.naturalHeight * pxPerSrcY };
+      // Temporarily show the full uncropped image at that extent so there's something to see and
+      // re-select — finalizeCrop() (or cancelCropMode() if abandoned) resolves this either way.
+      s.cropRect = null;
+      s.x1 = imgBounds.x1; s.y1 = imgBounds.y1; s.x2 = imgBounds.x2; s.y2 = imgBounds.y2;
+      redrawPage(pageId);
+    }
+    cropState = { pageId, strokeIndex, imgBounds, drag: null, prevCropRect, prevBounds };
     selectTool('cropImage');
     const pc = pageCanvases.get(pageId);
     if (pc) drawCropOverlay(pc);
@@ -2506,24 +3081,37 @@
     c.restore();
   }
   function cancelCropMode(){
-    const pageId = cropState && cropState.pageId;
+    const st = cropState;
     cropState = null;
-    const pc = pageId ? pageCanvases.get(pageId) : null;
+    if (st){
+      // Put the image back exactly as it was before crop mode temporarily expanded it — without
+      // this, abandoning crop mode (switching tools, etc.) would leave the image un-cropped.
+      const page = activeNotebook && activeNotebook.pages[st.pageId];
+      const s = page && page.strokes[st.strokeIndex];
+      if (s && st.prevBounds){
+        s.cropRect = st.prevCropRect ? {...st.prevCropRect} : null;
+        s.x1 = st.prevBounds.x1; s.y1 = st.prevBounds.y1; s.x2 = st.prevBounds.x2; s.y2 = st.prevBounds.y2;
+        redrawPage(st.pageId);
+      }
+    }
+    const pc = st && st.pageId ? pageCanvases.get(st.pageId) : null;
     if (pc) pc.laserCtx.clearRect(0,0,pc.laserCanvas.width,pc.laserCanvas.height);
   }
   function finalizeCrop(){
     const { pageId, strokeIndex, imgBounds, drag } = cropState || {};
     const page = activeNotebook && activeNotebook.pages[pageId];
     const s = page && page.strokes[strokeIndex];
-    const pc = pageCanvases.get(pageId);
     if (!s || !drag){ cancelCropMode(); selectTool('lasso'); return; }
     const dx1 = Math.min(drag.x1, drag.x2), dy1 = Math.min(drag.y1, drag.y2);
     const dx2 = Math.max(drag.x1, drag.x2), dy2 = Math.max(drag.y1, drag.y2);
     const iw = Math.abs(imgBounds.x2 - imgBounds.x1), ih = Math.abs(imgBounds.y2 - imgBounds.y1);
     const img = imageObjCache.get(s.src);
     if (dx2-dx1 < 8 || dy2-dy1 < 8 || iw <= 0 || ih <= 0 || !img || !img.complete){
-      cropState = null;
-      if (pc) pc.laserCtx.clearRect(0,0,pc.laserCanvas.width,pc.laserCanvas.height);
+      // Too small / invalid a drag to count as a real crop — put the image back as it was
+      // (cropState.imgBounds may have been temporarily expanded to the full image by
+      // startCropMode) rather than leaving it stuck at the expanded size.
+      cancelCropMode();
+      const pc = pageCanvases.get(pageId);
       selectTool('lasso'); lassoSelection = [strokeIndex]; lassoSelPageId = pageId;
       if (pc) drawLassoOverlay(pc);
       return;
@@ -2531,17 +3119,22 @@
     const ix1 = Math.min(imgBounds.x1, imgBounds.x2), iy1 = Math.min(imgBounds.y1, imgBounds.y2);
     const fx = (dx1 - ix1) / iw, fy = (dy1 - iy1) / ih;
     const fw = (dx2 - dx1) / iw, fh = (dy2 - dy1) / ih;
-    const existing = s.cropRect || { sx:0, sy:0, sw: img.naturalWidth, sh: img.naturalHeight };
+    // imgBounds always represents the FULL original image extent by this point (startCropMode
+    // guarantees that), so the new crop is computed directly in full-image source coordinates —
+    // never composed on top of a previous crop, which is what used to shrink the croppable area
+    // a little more every time.
     s.cropRect = {
-      sx: existing.sx + fx * existing.sw,
-      sy: existing.sy + fy * existing.sh,
-      sw: fw * existing.sw,
-      sh: fh * existing.sh
+      sx: fx * img.naturalWidth,
+      sy: fy * img.naturalHeight,
+      sw: fw * img.naturalWidth,
+      sh: fh * img.naturalHeight
     };
     s.x1 = dx1; s.y1 = dy1; s.x2 = dx2; s.y2 = dy2;
     page.redo = [];
     scheduleSave();
     cropState = null;
+    const pc = pageCanvases.get(pageId);
+    if (pc) pc.laserCtx.clearRect(0,0,pc.laserCanvas.width,pc.laserCanvas.height);
     redrawPage(pageId);
     selectTool('lasso'); lassoSelection = [strokeIndex]; lassoSelPageId = pageId;
     if (pc) drawLassoOverlay(pc);
@@ -2610,14 +3203,24 @@
       return;
     }
     if (tool === 'table'){
-      currentStroke = { tool, color, width, rows: lastTableDims.rows, cols: lastTableDims.cols, x1: pos.x, y1: pos.y, x2: pos.x, y2: pos.y };
+      currentStroke = { tool, color, width: toolWidths.table, rows: lastTableDims.rows, cols: lastTableDims.cols, x1: pos.x, y1: pos.y, x2: pos.x, y2: pos.y };
     } else if (tool === 'image'){
       currentStroke = { tool, src: pendingImageSrc, x1: pos.x, y1: pos.y, x2: pos.x, y2: pos.y };
     } else if (SHAPE_TOOLS.has(tool)){
-      currentStroke = { tool, color, width, x1: pos.x, y1: pos.y, x2: pos.x, y2: pos.y };
+      currentStroke = { tool, color, width: toolWidths.shapes, x1: pos.x, y1: pos.y, x2: pos.x, y2: pos.y };
     } else {
       smoothPrev = null; // fresh start for the jitter filter on this new stroke
-      currentStroke = { tool, color, width: (tool === 'eraser' ? eraserWidth : width), points: [pos] };
+      const w = tool === 'eraser' ? eraserWidth : (tool === 'laser' ? LASER_WIDTH : toolWidths[widthCategoryFor(tool)]);
+      currentStroke = { tool, color, width: w, points: [pos] };
+      if (tool === 'laser'){
+        // Add this stroke alongside whatever laser marks are already on screen (rather than
+        // replacing them), and cancel any fade-out in progress so old lines stay fully visible
+        // while a new one is being drawn.
+        laserStrokes.push(currentStroke);
+        clearTimeout(laserTimer);
+        if (laserFadeRAF){ cancelAnimationFrame(laserFadeRAF); laserFadeRAF = null; }
+        laserFadeAlpha = 1;
+      }
     }
   }
 
@@ -2644,16 +3247,23 @@
       const pos = getPos(e, pc.canvas);
       currentStroke.x2 = pos.x;
       currentStroke.y2 = pos.y;
+      if (currentStroke.tool === 'shapeLine') snapLineAngle(currentStroke);
       redrawPage(pageId);
       drawFullStroke(pc.ctx, currentStroke);
+      if (currentStroke.tool === 'shapeLine') drawLineAngleOverlay(pc, currentStroke);
       return;
     }
     const targetCtx = tool === 'laser' ? pc.laserCtx : pc.ctx;
     const pts = (e.getCoalescedEvents && e.getCoalescedEvents()) || [e];
-    for (const ev of pts){
-      const raw = getPos(ev, pc.canvas);
-      currentStroke.points.push(tool === 'laser' ? raw : smoothPoint(raw));
-      drawIncrementalSegment(targetCtx, currentStroke);
+    if (tool === 'laser'){
+      pts.forEach(ev => currentStroke.points.push(getPos(ev, pc.canvas)));
+      redrawAllLaserStrokes(pageId);
+    } else {
+      for (const ev of pts){
+        const raw = getPos(ev, pc.canvas);
+        currentStroke.points.push(smoothPoint(raw));
+        drawIncrementalSegment(targetCtx, currentStroke);
+      }
     }
   }
 
@@ -2673,6 +3283,10 @@
     }
     if (currentStroke && DRAG_TOOLS.has(currentStroke.tool)){
       const page = activeNotebook.pages[pageId];
+      if (currentStroke.tool === 'shapeLine'){
+        const pc = pageCanvases.get(pageId);
+        if (pc) pc.laserCtx.clearRect(0, 0, pc.laserCanvas.width, pc.laserCanvas.height);
+      }
       if (page){
         const moved = Math.hypot(currentStroke.x2 - currentStroke.x1, currentStroke.y2 - currentStroke.y1) > 2;
         if (moved){
@@ -2693,9 +3307,8 @@
       }
     } else if (currentStroke && currentStroke.points.length){
       if (currentStroke.tool === 'laser'){
-        const pc = pageCanvases.get(pageId);
         clearTimeout(laserTimer);
-        laserTimer = setTimeout(() => { if (pc) pc.laserCtx.clearRect(0,0,pc.laserCanvas.width,pc.laserCanvas.height); }, 900);
+        laserTimer = setTimeout(() => startLaserFadeOut(pageId), 1000);
       } else {
         const page = activeNotebook.pages[pageId];
         if (page){
@@ -3079,7 +3692,13 @@
     lasso: document.getElementById('lassoTool'),
     laser: document.getElementById('laserTool') };
   function selectTool(t){
+    if (tool === 'cropImage' && t !== 'cropImage' && cropState){
+      // Leaving crop mode any other way than finishing a drag (tapping a different tool, etc.) —
+      // put the image back exactly as it was, not stuck at the temporarily-expanded full size.
+      cancelCropMode();
+    }
     tool = t;
+    if (t !== 'eraser' && typeof eraserCursorEl !== 'undefined' && eraserCursorEl) eraserCursorEl.style.display = 'none';
     Object.entries(toolBtns).forEach(([k,btn]) => btn.classList.toggle('active', k === t));
     shapeToolBtn.classList.toggle('active', SHAPE_TOOLS.has(t));
     imageToolBtn.classList.toggle('active', t === 'image');
@@ -3226,12 +3845,19 @@
     if (pc) drawLassoOverlay(pc);
   });
 
-  const SWATCH_COLORS = ['#1c2430', '#2f4fa8', '#b4483a', '#2f7a4f', '#e0a12c'];
   const ERASER_SIZES_CM = [1, 2, 3];
+  // Pushes a color to the front of the remembered recent-colors list (max 6, no duplicates) and
+  // persists it — this is what makes the swatch row always reflect the last 6 colors actually used.
+  function pushRecentColor(c){
+    const list = (data.settings.recentColors || []).filter(x => x.toLowerCase() !== c.toLowerCase());
+    list.unshift(c);
+    data.settings.recentColors = list.slice(0, 6);
+    scheduleSave();
+  }
   // What the second toolbar row shows for each tool — matched to what that tool actually uses.
   function toolOptionsConfig(t){
     if (t === 'eraser')  return { eraserSizes:true, clearPage:true };
-    if (t === 'laser')   return { width:true,  widthLabel:'Pointer size' };            // laser color is fixed
+    if (t === 'laser')   return {};                                                     // fixed size/color, nothing to configure
     if (t === 'table')   return { color:true, width:true, widthLabel:'Line width', tableGrid:true };
     if (t === 'image' || t === 'lasso' || t === 'cropImage') return {};                  // nothing to configure
     return { color:true, width:true, widthLabel:'Line width' };                          // pen, pencil, highlighter, shapes
@@ -3241,32 +3867,33 @@
     row.innerHTML = '';
     const cfg = toolOptionsConfig(tool);
     if (cfg.color){
-      SWATCH_COLORS.forEach(c => {
+      // Always the last 6 colors actually used (most-recent first) — not a fixed palette.
+      const recent = (data.settings.recentColors && data.settings.recentColors.length) ? data.settings.recentColors : DEFAULT_RECENT_COLORS;
+      recent.slice(0, 6).forEach(c => {
         const sw = document.createElement('div');
-        sw.className = 'swatch' + (c === color ? ' active' : '');
+        sw.className = 'swatch' + (c.toLowerCase() === color.toLowerCase() ? ' active' : '');
         sw.dataset.color = c;
         sw.style.background = c;
         sw.addEventListener('click', () => {
           color = c;
           data.settings.penColor = color;
-          scheduleSave();
-          row.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
-          sw.classList.add('active');
+          pushRecentColor(color);
+          renderToolOptionsRow();
         });
         row.appendChild(sw);
       });
-      // Custom color — opens the native color picker for anything outside the fixed swatches.
+      // Custom color — opens our color picker modal for anything outside the recent swatches.
       const custom = document.createElement('div');
-      const isCustom = !SWATCH_COLORS.includes(color);
-      custom.className = 'swatch swatchCustom' + (isCustom ? ' active' : '');
+      custom.className = 'swatch swatchCustom';
       custom.title = 'Custom color';
-      custom.style.background = isCustom
-        ? color
-        : 'conic-gradient(from 0deg, red, yellow, lime, cyan, blue, magenta, red)';
+      custom.style.background = 'conic-gradient(from 0deg, red, yellow, lime, cyan, blue, magenta, red)';
       custom.addEventListener('click', () => {
-        const picker = document.getElementById('customColorPicker');
-        picker.value = isCustom ? color : '#ff3b30';
-        picker.click();
+        openColorPickerModal(color, (picked) => {
+          color = picked;
+          data.settings.penColor = color;
+          pushRecentColor(color);
+          renderToolOptionsRow();
+        });
       });
       row.appendChild(custom);
     }
@@ -3289,6 +3916,27 @@
           circle.classList.add('active');
         });
         row.appendChild(circle);
+      });
+      const eraseDiv = document.createElement('div'); eraseDiv.className = 'ediv'; row.appendChild(eraseDiv);
+      const ERASE_TYPE_META = [
+        { key:'pen',    label:'Pen',    icon:'<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>' },
+        { key:'table',  label:'Table',  icon:'<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18"/><path d="M9 4v16"/>' },
+        { key:'shapes', label:'Shapes', icon:'<circle cx="8" cy="8" r="5"/><rect x="13" y="13" width="8" height="8" rx="1"/>' },
+        { key:'image',  label:'Image',  icon:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>' }
+      ];
+      if (!data.settings.eraseTypes) data.settings.eraseTypes = {...DEFAULT_ERASE_TYPES};
+      ERASE_TYPE_META.forEach(meta => {
+        const on = data.settings.eraseTypes[meta.key] !== false;
+        const btn = document.createElement('button');
+        btn.className = 'eraseTypeToggle' + (on ? ' active' : '');
+        btn.title = (on ? 'Eraser affects ' : 'Eraser skips ') + meta.label.toLowerCase();
+        btn.innerHTML = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${meta.icon}</svg><span>${meta.label}</span>`;
+        btn.addEventListener('click', () => {
+          data.settings.eraseTypes[meta.key] = !on;
+          scheduleSave();
+          renderToolOptionsRow();
+        });
+        row.appendChild(btn);
       });
     }
     if (cfg.tableGrid){
@@ -3321,10 +3969,11 @@
       row.appendChild(label);
       const slider = document.createElement('input');
       slider.type = 'range'; slider.id = 'widthSlider';
-      slider.min = '1'; slider.max = '14'; slider.step = '0.5'; slider.value = String(width);
+      const wCat = widthCategoryFor(tool);
+      slider.min = '1'; slider.max = '14'; slider.step = '0.5'; slider.value = String(toolWidths[wCat]);
       slider.addEventListener('input', (e) => {
-        width = parseFloat(e.target.value);
-        data.settings.penWidth = width;
+        toolWidths[wCat] = parseFloat(e.target.value);
+        data.settings.toolWidths = toolWidths;
         scheduleSave();
       });
       row.appendChild(slider);
@@ -3356,12 +4005,6 @@
     }
   }
   renderToolOptionsRow();
-  document.getElementById('customColorPicker').addEventListener('input', (e) => {
-    color = e.target.value;
-    data.settings.penColor = color;
-    scheduleSave();
-    renderToolOptionsRow();
-  });
 
   document.getElementById('undoBtn').addEventListener('click', () => {
     const page = activeNotebook && activeNotebook.pages[currentId];
@@ -3389,11 +4032,18 @@
   document.getElementById('pagesModalClose').addEventListener('click', () => pagesModal.classList.add('hidden'));
   pagesModal.addEventListener('click', (e) => { if (e.target === pagesModal) pagesModal.classList.add('hidden'); });
 
+  // Tap a card to jump to that page. Hold one for 3s (without moving) and it becomes freely
+  // draggable to reorder the notebook's pages — drop it on/near another card to move it there.
+  const PAGE_HOLD_MS = 3000;
+  const PAGE_MOVE_CANCEL_PX = 10;
+  let pageDrag = null; // { id, dragging } while an active hold/drag gesture is in progress
+
   function renderPagesGrid(){
     pagesGrid.innerHTML = '';
     activeNotebook.pageOrder.forEach((id, idx) => {
       const card = document.createElement('div');
       card.className = 'pageCard' + (id === currentId ? ' active' : '');
+      card.dataset.pageId = id;
       card.innerHTML = `<div class="thumb">${idx+1}</div><div class="label"></div>`;
       card.querySelector('.label').textContent = activeNotebook.pages[id].title;
       if (activeNotebook.pageOrder.length > 1){
@@ -3412,9 +4062,13 @@
         });
         card.appendChild(del);
       }
-      card.addEventListener('click', () => { scrollToPage(id); pagesModal.classList.add('hidden'); });
+      attachPageCardGesture(card, id);
       pagesGrid.appendChild(card);
     });
+    if (pageDrag && pageDrag.dragging){
+      const el = pagesGrid.querySelector(`.pageCard[data-page-id="${pageDrag.id}"]`);
+      if (el) el.classList.add('dragging');
+    }
     const addTile = document.createElement('div');
     addTile.className = 'pageCard addTile';
     addTile.innerHTML = `<div class="thumb">+</div><div class="label">New page</div>`;
@@ -3422,17 +4076,117 @@
     pagesGrid.appendChild(addTile);
   }
 
-  function addNewPage(){
+  function attachPageCardGesture(card, id){
+    card.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.pageDelete')) return; // let the delete button behave normally
+      if (pageDrag) return; // a hold/drag is already in progress on another card
+      const startX = e.clientX, startY = e.clientY;
+      let moved = false;
+      const holdTimer = setTimeout(() => {
+        if (moved) return;
+        pageDrag = { id, dragging: true };
+        card.classList.remove('holding');
+        card.classList.add('dragging');
+      }, PAGE_HOLD_MS);
+      card.classList.add('holding');
+      function onMove(ev){
+        if (!moved && Math.hypot(ev.clientX-startX, ev.clientY-startY) > PAGE_MOVE_CANCEL_PX){
+          moved = true;
+          clearTimeout(holdTimer);
+          card.classList.remove('holding');
+        }
+        if (pageDrag && pageDrag.dragging){
+          // Whichever card the pointer is currently over becomes the drop target — move the
+          // dragged page there immediately so the grid re-flows live, like a normal reorder drag.
+          const target = document.elementFromPoint(ev.clientX, ev.clientY);
+          const targetCard = target && target.closest('.pageCard');
+          const targetId = targetCard && targetCard.dataset.pageId;
+          if (targetId && targetId !== pageDrag.id){
+            const order = activeNotebook.pageOrder;
+            const from = order.indexOf(pageDrag.id), to = order.indexOf(targetId);
+            if (from !== -1 && to !== -1){
+              order.splice(from, 1);
+              order.splice(to, 0, pageDrag.id);
+              renderPagesGrid();
+            }
+          }
+        }
+      }
+      function onUp(){
+        clearTimeout(holdTimer);
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        document.removeEventListener('pointercancel', onUp);
+        card.classList.remove('holding');
+        if (pageDrag && pageDrag.dragging){
+          pageDrag = null;
+          scheduleSave();
+          renderPagesGrid();
+          return;
+        }
+        pageDrag = null;
+        if (!moved){
+          // A plain tap (released before the hold threshold, without dragging) — go to that page.
+          scrollToPage(id);
+          pagesModal.classList.add('hidden');
+        }
+      }
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
+      document.addEventListener('pointercancel', onUp);
+    });
+  }
+
+  function addNewPage(placement){
+    placement = placement || data.settings.newPagePlacement || 'after';
     const id = uid();
     activeNotebook.pages[id] = newPageObj();
-    activeNotebook.pageOrder.push(id);
-    const frame = createPageFrame(id);
-    stage.appendChild(frame);
-    if (pageObserver) pageObserver.observe(frame);
+    const order = activeNotebook.pageOrder;
+    if (placement === 'before' && currentId && order.includes(currentId)){
+      order.splice(order.indexOf(currentId), 0, id);
+    } else if (placement === 'after' && currentId && order.includes(currentId)){
+      order.splice(order.indexOf(currentId) + 1, 0, id);
+    } else {
+      order.push(id); // 'last', or no current page to be relative to yet
+    }
+    renderPageStack();
     scrollToPage(id);
     scheduleSave();
   }
-  document.getElementById('addPage').addEventListener('click', addNewPage);
+
+  // ---- New Page popover: New page / Import PDF actions, plus where new pages/PDFs land ----
+  const addPagePopover = document.getElementById('addPagePopover');
+  function renderAddPagePopover(){
+    const current = data.settings.newPagePlacement || 'after';
+    addPagePopover.querySelectorAll('.addPagePlacementRow').forEach(row => {
+      row.classList.toggle('active', row.dataset.placement === current);
+    });
+  }
+  document.getElementById('addPage').addEventListener('click', (e) => {
+    e.stopPropagation();
+    renderAddPagePopover();
+    addPagePopover.classList.toggle('hidden');
+  });
+  addPagePopover.addEventListener('click', (e) => e.stopPropagation());
+  document.getElementById('addPageNewRow').addEventListener('click', () => {
+    addPagePopover.classList.add('hidden');
+    addNewPage();
+  });
+  document.getElementById('addPageImportPdfRow').addEventListener('click', () => {
+    addPagePopover.classList.add('hidden');
+    pdfImportMode = 'currentNotebook';
+    pdfImportPlacement = data.settings.newPagePlacement || 'after';
+    pdfFileInput.click();
+  });
+  addPagePopover.querySelectorAll('.addPagePlacementRow').forEach(row => {
+    row.addEventListener('click', () => {
+      data.settings.newPagePlacement = row.dataset.placement;
+      scheduleSave();
+      renderAddPagePopover();
+      addPagePopover.classList.add('hidden');
+    });
+  });
+  document.addEventListener('click', () => addPagePopover.classList.add('hidden'));
 
   titleEl.addEventListener('input', () => {
     if (!currentId || !activeNotebook) return;
@@ -3722,19 +4476,212 @@
     closeTemplateModal();
   });
 
-  window.addEventListener('resize', () => {
+  // ---- Custom color picker modal (Grid / Spectrum tabs, hex+RGB fields, eyedropper) ----
+  function hexToRgb(hex){
+    hex = (hex || '#000000').replace('#','');
+    if (hex.length === 3) hex = hex.split('').map(c => c+c).join('');
+    const n = parseInt(hex, 16) || 0;
+    return { r:(n>>16)&255, g:(n>>8)&255, b:n&255 };
+  }
+  function rgbToHex(r,g,b){
+    const c = v => Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0');
+    return '#' + c(r)+c(g)+c(b);
+  }
+  function rgbToHsv(r,g,b){
+    r/=255; g/=255; b/=255;
+    const max=Math.max(r,g,b), min=Math.min(r,g,b), d=max-min;
+    let h=0;
+    if (d !== 0){
+      if (max===r) h = 60*(((g-b)/d)%6);
+      else if (max===g) h = 60*((b-r)/d+2);
+      else h = 60*((r-g)/d+4);
+    }
+    if (h<0) h+=360;
+    const s = max===0 ? 0 : d/max;
+    return { h, s, v:max };
+  }
+  function hsvToRgb(h,s,v){
+    const c = v*s, x = c*(1-Math.abs((h/60)%2-1)), m = v-c;
+    let r,g,b;
+    if (h<60){ r=c;g=x;b=0; } else if (h<120){ r=x;g=c;b=0; } else if (h<180){ r=0;g=c;b=x; }
+    else if (h<240){ r=0;g=x;b=c; } else if (h<300){ r=x;g=0;b=c; } else { r=c;g=0;b=x; }
+    return { r:(r+m)*255, g:(g+m)*255, b:(b+m)*255 };
+  }
+
+  const cpModal = document.getElementById('colorPickerModal');
+  const cpGridEl = document.getElementById('cpGrid');
+  const cpSvBox = document.getElementById('cpSvBox');
+  const cpSvThumb = document.getElementById('cpSvThumb');
+  const cpHueSlider = document.getElementById('cpHueSlider');
+  const cpHueThumb = document.getElementById('cpHueThumb');
+  const cpPreview = document.getElementById('cpPreview');
+  const cpHexInput = document.getElementById('cpHex');
+  const cpRInput = document.getElementById('cpR');
+  const cpGInput = document.getElementById('cpG');
+  const cpBInput = document.getElementById('cpB');
+  let cpState = { h:0, s:1, v:0.82 }; // current HSV, source of truth while the modal is open
+  let cpOnPick = null;
+
+  // Grid tab: column 0 is grayscale (black→white), columns 1..11 sweep the hue wheel in 30°
+  // steps; each column runs dark→vivid→pastel top-to-bottom, like the reference picker.
+  (function buildGrid(){
+    const ROWS = 10, COLS = 12;
+    for (let r = 0; r < ROWS; r++){
+      const l = 6 + r * (94/(ROWS-1)); // 6%..100% lightness, evenly spaced
+      for (let c = 0; c < COLS; c++){
+        const sw = document.createElement('div');
+        sw.className = 'cpSwatch';
+        let hex;
+        if (c === 0){
+          const v = Math.round(l/100*255);
+          hex = rgbToHex(v,v,v);
+        } else {
+          const hue = (c-1) * (360/(COLS-1));
+          const rgb = hsvToRgb(hue, 1, 1);
+          // Blend the pure hue toward black (low r) or white (high r) to get dark/pastel tints
+          // while keeping mid-rows fully saturated, matching the reference grid's look.
+          const t = l/100;
+          const mix = (ch) => t < 0.5 ? ch*(t/0.5) : ch + (255-ch)*((t-0.5)/0.5);
+          hex = rgbToHex(mix(rgb.r), mix(rgb.g), mix(rgb.b));
+        }
+        sw.dataset.hex = hex;
+        sw.style.background = hex;
+        sw.addEventListener('click', () => {
+          cpGridEl.querySelectorAll('.cpSwatch').forEach(s => s.classList.remove('active'));
+          sw.classList.add('active');
+          setCpFromHex(hex, true);
+        });
+        cpGridEl.appendChild(sw);
+      }
+    }
+  })();
+
+  function updateCpUI(){
+    const { r, g, b } = hsvToRgb(cpState.h, cpState.s, cpState.v);
+    const hex = rgbToHex(r,g,b);
+    cpPreview.style.background = hex;
+    cpHexInput.value = hex.toUpperCase();
+    cpRInput.value = Math.round(r);
+    cpGInput.value = Math.round(g);
+    cpBInput.value = Math.round(b);
+    cpSvBox.style.background = `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(${cpState.h},100%,50%))`;
+    cpSvThumb.style.left = (cpState.s*100) + '%';
+    cpSvThumb.style.top = ((1-cpState.v)*100) + '%';
+    cpHueThumb.style.left = (cpState.h/360*100) + '%';
+    // Reflect an exact grid-color match, if any, as the active grid swatch.
+    cpGridEl.querySelectorAll('.cpSwatch').forEach(s => s.classList.toggle('active', s.dataset.hex.toLowerCase() === hex.toLowerCase()));
+  }
+  function setCpFromHex(hex, skipFieldSync){
+    const { r, g, b } = hexToRgb(hex);
+    const hsv = rgbToHsv(r,g,b);
+    cpState = hsv;
+    updateCpUI();
+  }
+  function setCpFromRgb(r,g,b){
+    cpState = rgbToHsv(r,g,b);
+    updateCpUI();
+  }
+
+  function openColorPickerModal(initialColor, onPick){
+    cpOnPick = onPick;
+    setCpFromHex(initialColor);
+    cpModal.classList.remove('hidden');
+  }
+  function closeCpModal(){ cpModal.classList.add('hidden'); }
+
+  document.getElementById('cpTabGrid').addEventListener('click', () => {
+    document.getElementById('cpTabGrid').classList.add('active');
+    document.getElementById('cpTabSpectrum').classList.remove('active');
+    document.getElementById('cpGridPane').classList.remove('hidden');
+    document.getElementById('cpSpectrumPane').classList.add('hidden');
+  });
+  document.getElementById('cpTabSpectrum').addEventListener('click', () => {
+    document.getElementById('cpTabSpectrum').classList.add('active');
+    document.getElementById('cpTabGrid').classList.remove('active');
+    document.getElementById('cpSpectrumPane').classList.remove('hidden');
+    document.getElementById('cpGridPane').classList.add('hidden');
+  });
+
+  function dragOn(el, onMove){
+    let active = false;
+    el.addEventListener('pointerdown', (e) => {
+      active = true;
+      try { el.setPointerCapture(e.pointerId); } catch(err){}
+      onMove(e);
+    });
+    el.addEventListener('pointermove', (e) => { if (active) onMove(e); });
+    const end = () => { active = false; };
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
+  }
+  dragOn(cpSvBox, (e) => {
+    const r = cpSvBox.getBoundingClientRect();
+    const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    const y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+    cpState.s = x; cpState.v = 1 - y;
+    updateCpUI();
+  });
+  dragOn(cpHueSlider, (e) => {
+    const r = cpHueSlider.getBoundingClientRect();
+    const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    cpState.h = x * 360;
+    updateCpUI();
+  });
+
+  cpHexInput.addEventListener('change', () => {
+    let v = cpHexInput.value.trim();
+    if (!v.startsWith('#')) v = '#' + v;
+    if (/^#[0-9a-fA-F]{6}$/.test(v)) setCpFromHex(v);
+    else updateCpUI(); // invalid — snap back to the last valid value
+  });
+  [cpRInput, cpGInput, cpBInput].forEach(inp => {
+    inp.addEventListener('change', () => {
+      const clamp = v => Math.max(0, Math.min(255, parseInt(v,10) || 0));
+      setCpFromRgb(clamp(cpRInput.value), clamp(cpGInput.value), clamp(cpBInput.value));
+    });
+  });
+
+  const cpEyedropperBtn = document.getElementById('cpEyedropper');
+  if (typeof window.EyeDropper === 'function'){
+    cpEyedropperBtn.addEventListener('click', async () => {
+      try {
+        const ed = new window.EyeDropper();
+        const result = await ed.open();
+        if (result && result.sRGBHex) setCpFromHex(result.sRGBHex);
+      } catch(e){ /* user cancelled the pick — nothing to do */ }
+    });
+  } else {
+    cpEyedropperBtn.style.display = 'none';
+  }
+
+  document.getElementById('cpCancel').addEventListener('click', closeCpModal);
+  document.getElementById('cpOk').addEventListener('click', () => {
+    const { r, g, b } = hsvToRgb(cpState.h, cpState.s, cpState.v);
+    const hex = rgbToHex(r,g,b);
+    closeCpModal();
+    if (cpOnPick) cpOnPick(hex);
+  });
+  cpModal.addEventListener('click', (e) => { if (e.target === cpModal) closeCpModal(); });
+
+  function handleViewportSizeChange(){
     const newDpr = Math.max(window.devicePixelRatio || 1, 1);
     if (newDpr !== dpr && activeNotebook){ dpr = newDpr; renderPageStack(); }
     if (activeNotebook && document.getElementById('editorView') && !document.getElementById('editorView').classList.contains('hidden')){
       // Was sitting at fit (e.g. hasn't manually zoomed in) — recompute fit for the new viewport
-      // size (rotation, resize, keyboard opening, etc.) instead of leaving stale scale behind
-      // that could overflow horizontally again.
+      // size (rotation, resize, keyboard opening, entering/leaving fullscreen, etc.) instead of
+      // leaving stale scale behind that could overflow horizontally again.
       const wasAtFit = zoom <= fitZoom + 0.01;
       fitZoom = computeFitZoom();
       if (wasAtFit){ zoom = fitZoom; applyZoom(); }
       else { applyZoom(); }
     }
-  });
+  }
+  window.addEventListener('resize', handleViewportSizeChange);
+  // requestFullscreen() (called from openNotebook) resolves asynchronously — on some browsers it
+  // doesn't fire a 'resize' event at all, or fires one before the fullscreen viewport has actually
+  // settled, so the page can render at the wrong fit and then visibly snap to the right size a
+  // moment later. Listening for fullscreenchange directly closes that gap.
+  document.addEventListener('fullscreenchange', handleViewportSizeChange);
 
   loadAll();
 })();
