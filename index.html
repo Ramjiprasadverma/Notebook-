@@ -482,7 +482,7 @@
   .radioOption input { accent-color: var(--accent); width:15px; height:15px; }
   .lockNote { font-size:11px; color:#a39c86; margin-top:8px; line-height:1.4; }
   #pagesGrid { padding: 16px 18px; overflow-y:auto; display:grid; grid-template-columns: repeat(auto-fill, minmax(90px,1fr)); gap:12px; }
-  .pageCard { position:relative; cursor:pointer; }
+  .pageCard { position:relative; cursor:pointer; touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
   .pageCard .thumb {
     background: var(--panel); border-radius:6px; aspect-ratio: 3/4;
     display:flex; align-items:center; justify-content:center; font-size:20px; font-weight:700; color:#c9c2ac;
@@ -722,9 +722,11 @@
         <button class="ebtn" id="backBtn" title="Back">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
-        <button class="ebtn" id="allPagesBtn" title="All pages">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-        </button>
+        <div style="position:relative;">
+          <button class="ebtn" id="recentBtn" title="Switch to recent notebooks">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M3 12l9 4 9-4"/></svg>
+          </button>
+        </div>
         <div style="position:relative;">
           <button class="ebtn" id="addPage" title="New page">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -753,11 +755,9 @@
             </div>
           </div>
         </div>
-        <div style="position:relative;">
-          <button class="ebtn" id="recentBtn" title="Switch to recent notebooks">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M3 12l9 4 9-4"/></svg>
-          </button>
-        </div>
+        <button class="ebtn" id="allPagesBtn" title="All pages">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        </button>
         <input id="pageTitle" type="text" value="Untitled page" spellcheck="false">
         <div class="ediv"></div>
         <button class="ebtn" id="undoBtn" title="Undo">
@@ -1954,7 +1954,9 @@
       const p = document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
       if (p && p.catch) p.catch(()=>{});
     } catch(e){ /* fullscreen not permitted in this context — fine, we already fill the viewport */ }
-    currentId = activeNotebook.pageOrder[0];
+    currentId = (activeNotebook.lastPageId && activeNotebook.pageOrder.includes(activeNotebook.lastPageId))
+      ? activeNotebook.lastPageId
+      : activeNotebook.pageOrder[0];
     // Open at fit-to-width instead of a flat 100%, so a full-size page never starts wider than
     // the screen (which is what caused the horizontal slide on narrow/mobile viewports).
     fitZoom = computeFitZoom();
@@ -1966,7 +1968,12 @@
     // before being wiped and replaced. That flash was the open glitch.
     renderPageStack();
     applyZoom();
-    wrap.scrollTop = 0; clampScrollX(); clampScrollY(); // frame exists now, so these can actually center it
+    // frame exists now, so this can actually scroll to it — jump straight to the reopened
+    // (last-viewed) page rather than always resetting to the top of the stack.
+    const openPc = pageCanvases.get(currentId);
+    if (openPc) openPc.frame.scrollIntoView({ block: 'start' });
+    else wrap.scrollTop = 0;
+    clampScrollX(); clampScrollY();
     showStatusPill(); // brief show-then-fade so the page count is visible right on open too
     updateScrubPosition();
     updateActivePageUI();
@@ -2726,6 +2733,10 @@
     if (!page.redo) page.redo = [];
     titleEl.value = page.title;
     pageCounterEl.textContent = `${activeNotebook.pageOrder.indexOf(currentId)+1}/${activeNotebook.pageOrder.length}`;
+    if (activeNotebook.lastPageId !== currentId){
+      activeNotebook.lastPageId = currentId;
+      scheduleSave();
+    }
   }
 
   function scrollToPage(id){
@@ -4032,10 +4043,11 @@
   document.getElementById('pagesModalClose').addEventListener('click', () => pagesModal.classList.add('hidden'));
   pagesModal.addEventListener('click', (e) => { if (e.target === pagesModal) pagesModal.classList.add('hidden'); });
 
-  // Tap a card to jump to that page. Hold one for 3s (without moving) and it becomes freely
+  // Tap a card to jump to that page. Hold one (without moving) and it becomes freely
   // draggable to reorder the notebook's pages — drop it on/near another card to move it there.
-  const PAGE_HOLD_MS = 3000;
-  const PAGE_MOVE_CANCEL_PX = 10;
+  const PAGE_HOLD_MS = 450;
+  const PAGE_JITTER_CANCEL_PX = 20; // small drift that just cancels the pending hold-to-drag timer
+  const PAGE_TAP_MAX_PX = 60;       // beyond this on release, treat it as a deliberate scroll/swipe, not a tap
   let pageDrag = null; // { id, dragging } while an active hold/drag gesture is in progress
 
   function renderPagesGrid(){
@@ -4080,8 +4092,10 @@
     card.addEventListener('pointerdown', (e) => {
       if (e.target.closest('.pageDelete')) return; // let the delete button behave normally
       if (pageDrag) return; // a hold/drag is already in progress on another card
+      try { card.setPointerCapture(e.pointerId); } catch(err){}
       const startX = e.clientX, startY = e.clientY;
       let moved = false;
+      let maxDist = 0;
       const holdTimer = setTimeout(() => {
         if (moved) return;
         pageDrag = { id, dragging: true };
@@ -4090,7 +4104,9 @@
       }, PAGE_HOLD_MS);
       card.classList.add('holding');
       function onMove(ev){
-        if (!moved && Math.hypot(ev.clientX-startX, ev.clientY-startY) > PAGE_MOVE_CANCEL_PX){
+        const dist = Math.hypot(ev.clientX-startX, ev.clientY-startY);
+        if (dist > maxDist) maxDist = dist;
+        if (!moved && dist > PAGE_JITTER_CANCEL_PX){
           moved = true;
           clearTimeout(holdTimer);
           card.classList.remove('holding');
@@ -4125,8 +4141,9 @@
           return;
         }
         pageDrag = null;
-        if (!moved){
-          // A plain tap (released before the hold threshold, without dragging) — go to that page.
+        if (maxDist <= PAGE_TAP_MAX_PX){
+          // Released before the hold turned into a drag, and didn't travel far enough to be a
+          // deliberate scroll/swipe (some jitter is normal on touch/stylus) — treat as a tap.
           scrollToPage(id);
           pagesModal.classList.add('hidden');
         }
