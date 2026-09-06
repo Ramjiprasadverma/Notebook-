@@ -259,6 +259,15 @@
   .swatchCustom.active { border-color: var(--ink); transform: scale(1.08); }
   #toolOptionsRow .optLabel { font-size:11px; color:#8a8474; flex-shrink:0; }
   #toolOptionsRow .emptyNote { font-size:12px; color:#a39c86; padding:2px 0; }
+  .stepperCtl { display:flex; align-items:center; gap:6px; flex-shrink:0; }
+  .stepperBtn {
+    width:26px; height:26px; border-radius:7px; border:1px solid var(--paper-line); background: var(--panel);
+    color: var(--ink); font-size:15px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center;
+    flex-shrink:0;
+  }
+  .stepperBtn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .stepperBtn:disabled { opacity:0.35; cursor:default; }
+  .stepperVal { font-size:13px; font-weight:600; min-width:16px; text-align:center; flex-shrink:0; }
   #clearPageBtn {
     flex-shrink:0; border:none; background:transparent; color:#b4483a; cursor:pointer;
     width:38px; height:38px; border-radius:8px; display:flex; align-items:center; justify-content:center;
@@ -2460,6 +2469,35 @@
     c.stroke();
     c.restore();
   }
+  function tableRowFracs(stroke){
+    const rows = stroke.rows || 3;
+    if (stroke.rowFracs && stroke.rowFracs.length === rows) return stroke.rowFracs;
+    return new Array(rows).fill(1/rows);
+  }
+  function tableColFracs(stroke){
+    const cols = stroke.cols || 3;
+    if (stroke.colFracs && stroke.colFracs.length === cols) return stroke.colFracs;
+    return new Array(cols).fill(1/cols);
+  }
+  // Add or remove rows/cols on an existing table while keeping every OTHER divider exactly
+  // where it was — growing splits the last row/col in two, shrinking merges the last one into
+  // the one before it, so edits near the start of the table don't shift unrelated dividers.
+  function setTableRows(stroke, newRows){
+    newRows = Math.max(1, Math.min(20, Math.round(newRows)));
+    const fracs = tableRowFracs(stroke).slice();
+    while (fracs.length < newRows){ const last = fracs.pop(); fracs.push(last/2, last/2); }
+    while (fracs.length > newRows){ const removed = fracs.pop(); fracs[fracs.length-1] += removed; }
+    stroke.rows = newRows;
+    stroke.rowFracs = fracs;
+  }
+  function setTableCols(stroke, newCols){
+    newCols = Math.max(1, Math.min(20, Math.round(newCols)));
+    const fracs = tableColFracs(stroke).slice();
+    while (fracs.length < newCols){ const last = fracs.pop(); fracs.push(last/2, last/2); }
+    while (fracs.length > newCols){ const removed = fracs.pop(); fracs[fracs.length-1] += removed; }
+    stroke.cols = newCols;
+    stroke.colFracs = fracs;
+  }
   function drawTableStroke(c, stroke){
     c.save();
     c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; c.shadowBlur = 0;
@@ -2468,12 +2506,18 @@
     const w = Math.abs(stroke.x2 - stroke.x1), h = Math.abs(stroke.y2 - stroke.y1);
     const rows = stroke.rows || 3, cols = stroke.cols || 3;
     c.strokeRect(x, y, w, h);
-    for (let i=1; i<rows; i++){
-      const ry = y + (h/rows)*i;
+    const rowFracs = tableRowFracs(stroke);
+    let acc = 0;
+    for (let i=0; i<rows-1; i++){
+      acc += rowFracs[i];
+      const ry = y + h*acc;
       c.beginPath(); c.moveTo(x, ry); c.lineTo(x+w, ry); c.stroke();
     }
-    for (let j=1; j<cols; j++){
-      const rx = x + (w/cols)*j;
+    const colFracs = tableColFracs(stroke);
+    acc = 0;
+    for (let j=0; j<cols-1; j++){
+      acc += colFracs[j];
+      const rx = x + w*acc;
       c.beginPath(); c.moveTo(rx, y); c.lineTo(rx, y+h); c.stroke();
     }
     c.restore();
@@ -2821,7 +2865,10 @@
   let lassoDragLast = null;
   let lassoResizeHandle = null; // 'nw'|'ne'|'sw'|'se' while lassoMode === 'resizing'
   let lassoResizeStroke = null; // the single stroke object being resized (bounds mutated live)
+  let lassoDividerAxis = null;  // 'row'|'col' while lassoMode === 'resizingDivider'
+  let lassoDividerIndex = null; // which internal divider (0-based, between row/col i and i+1)
   const RESIZE_HANDLE_HIT = 14; // canvas px — generous hit radius so a fingertip can grab a corner
+  const TABLE_DIVIDER_HIT = 10; // canvas px tolerance for grabbing an internal table divider
   function resizeHandlePoints(b){
     return {
       nw: { x:b.x-6, y:b.y-6 }, ne: { x:b.x+b.w+6, y:b.y-6 },
@@ -2843,6 +2890,32 @@
     const s = page.strokes[lassoSelection[0]];
     if (!s || s.locked || s.x1 === undefined) return null;
     return s;
+  }
+  // Only for a selected table: is `pos` near one of its INTERNAL row/column dividers?
+  // The outer border (first/last row and column) is deliberately excluded — that's what the
+  // corner resize handles control instead.
+  function hitTestTableDivider(pos, stroke){
+    if (!stroke || stroke.tool !== 'table') return null;
+    const x = Math.min(stroke.x1, stroke.x2), y = Math.min(stroke.y1, stroke.y2);
+    const w = Math.abs(stroke.x2 - stroke.x1), h = Math.abs(stroke.y2 - stroke.y1);
+    const rows = stroke.rows || 3, cols = stroke.cols || 3;
+    if (pos.x >= x-TABLE_DIVIDER_HIT && pos.x <= x+w+TABLE_DIVIDER_HIT && rows > 1){
+      const rowFracs = tableRowFracs(stroke);
+      let acc = 0;
+      for (let i=0; i<rows-1; i++){
+        acc += rowFracs[i];
+        if (Math.abs(pos.y - (y + h*acc)) <= TABLE_DIVIDER_HIT) return { axis:'row', index:i };
+      }
+    }
+    if (pos.y >= y-TABLE_DIVIDER_HIT && pos.y <= y+h+TABLE_DIVIDER_HIT && cols > 1){
+      const colFracs = tableColFracs(stroke);
+      let acc = 0;
+      for (let j=0; j<cols-1; j++){
+        acc += colFracs[j];
+        if (Math.abs(pos.x - (x + w*acc)) <= TABLE_DIVIDER_HIT) return { axis:'col', index:j };
+      }
+    }
+    return null;
   }
 
   function strokeRefPoints(s){
@@ -2868,6 +2941,8 @@
     const clone = Object.assign({}, s);
     if (s.points) clone.points = s.points.map(p => ({...p}));
     if (s.cropRect) clone.cropRect = {...s.cropRect};
+    if (s.rowFracs) clone.rowFracs = s.rowFracs.slice();
+    if (s.colFracs) clone.colFracs = s.colFracs.slice();
     translateStroke(clone, 20, 20); // small offset so the copy is visibly separate from the original
     return clone;
   }
@@ -2967,9 +3042,11 @@
     const pid = lassoSelPageId;
     lassoSelection = []; lassoSelPageId = null; lassoMode = null; lassoPath = [];
     lassoResizeHandle = null; lassoResizeStroke = null;
+    lassoDividerAxis = null; lassoDividerIndex = null;
     const pc = pid ? pageCanvases.get(pid) : null;
     if (pc) pc.laserCtx.clearRect(0,0,pc.laserCanvas.width,pc.laserCanvas.height);
     document.getElementById('lassoActionBar').classList.add('hidden');
+    if (typeof renderToolOptionsRow === 'function') renderToolOptionsRow();
   }
   function handleLassoDown(pageId, pos){
     if (lassoSelection.length && lassoSelPageId === pageId){
@@ -2981,6 +3058,14 @@
         if (handle){
           lassoMode = 'resizing';
           lassoResizeHandle = handle;
+          lassoResizeStroke = resizable;
+          return;
+        }
+        const div = hitTestTableDivider(pos, resizable);
+        if (div){
+          lassoMode = 'resizingDivider';
+          lassoDividerAxis = div.axis;
+          lassoDividerIndex = div.index;
           lassoResizeStroke = resizable;
           return;
         }
@@ -3013,6 +3098,34 @@
       drawLassoOverlay(pc);
       return;
     }
+    if (lassoMode === 'resizingDivider'){
+      const s = lassoResizeStroke;
+      if (!s) return;
+      const x = Math.min(s.x1, s.x2), y = Math.min(s.y1, s.y2);
+      const w = Math.abs(s.x2 - s.x1), h = Math.abs(s.y2 - s.y1);
+      const MINFRAC = 0.06; // don't let a row/col get squeezed away to nothing
+      const i = lassoDividerIndex;
+      if (lassoDividerAxis === 'row'){
+        const fracs = tableRowFracs(s).slice();
+        let before = 0; for (let k=0; k<i; k++) before += fracs[k];
+        const pairSum = fracs[i] + fracs[i+1];
+        let f = ((pos.y - y)/h) - before;
+        f = Math.max(MINFRAC, Math.min(pairSum-MINFRAC, f));
+        fracs[i] = f; fracs[i+1] = pairSum - f;
+        s.rowFracs = fracs;
+      } else {
+        const fracs = tableColFracs(s).slice();
+        let before = 0; for (let k=0; k<i; k++) before += fracs[k];
+        const pairSum = fracs[i] + fracs[i+1];
+        let f = ((pos.x - x)/w) - before;
+        f = Math.max(MINFRAC, Math.min(pairSum-MINFRAC, f));
+        fracs[i] = f; fracs[i+1] = pairSum - f;
+        s.colFracs = fracs;
+      }
+      redrawPage(pageId);
+      drawLassoOverlay(pc);
+      return;
+    }
     if (lassoMode === 'dragging'){
       const page = activeNotebook.pages[pageId];
       if (!page) return;
@@ -3037,6 +3150,12 @@
       if (pc) drawLassoOverlay(pc);
       return;
     }
+    if (lassoMode === 'resizingDivider'){
+      lassoMode = null; lassoDividerAxis = null; lassoDividerIndex = null; lassoResizeStroke = null;
+      if (page){ page.redo = []; scheduleSave(); }
+      if (pc) drawLassoOverlay(pc);
+      return;
+    }
     if (lassoMode === 'dragging'){
       lassoMode = null;
       if (page){ page.redo = []; scheduleSave(); }
@@ -3055,9 +3174,11 @@
           lassoSelection = [hitIdx];
           lassoSelPageId = pageId;
           if (pc) drawLassoOverlay(pc);
+          if (typeof renderToolOptionsRow === 'function') renderToolOptionsRow();
           return;
         }
         clearLassoSelection();
+        if (typeof renderToolOptionsRow === 'function') renderToolOptionsRow();
         return;
       }
       const matches = [];
@@ -3066,6 +3187,7 @@
       lassoSelection = matches;
       lassoSelPageId = pageId;
       if (pc) drawLassoOverlay(pc);
+      if (typeof renderToolOptionsRow === 'function') renderToolOptionsRow();
     }
   }
   function hitTestObjectAt(page, pos){
@@ -3898,6 +4020,7 @@
     updateLassoDeleteBtnPosition();
     const pc = pageCanvases.get(lassoSelPageId);
     if (pc) drawLassoOverlay(pc);
+    if (typeof renderToolOptionsRow === 'function') renderToolOptionsRow();
   });
 
   const ERASER_SIZES_CM = [1, 2, 3];
@@ -3910,6 +4033,45 @@
     scheduleSave();
   }
   // What the second toolbar row shows for each tool — matched to what that tool actually uses.
+  // A small reusable "− value +" control, replacing the old slider/number-input style
+  // everywhere a bounded numeric setting is edited (line width, table rows/cols).
+  function createStepper(label, value, min, max, onChange){
+    const wrap = document.createElement('div');
+    wrap.className = 'stepperCtl';
+    const labelEl = document.createElement('span');
+    labelEl.className = 'optLabel';
+    labelEl.textContent = label;
+    const minus = document.createElement('button');
+    minus.type = 'button'; minus.className = 'stepperBtn'; minus.textContent = '−'; minus.title = `Decrease ${label.toLowerCase()}`;
+    const valEl = document.createElement('span');
+    valEl.className = 'stepperVal';
+    const plus = document.createElement('button');
+    plus.type = 'button'; plus.className = 'stepperBtn'; plus.textContent = '+'; plus.title = `Increase ${label.toLowerCase()}`;
+    let v = Math.max(min, Math.min(max, Math.round(value)));
+    valEl.textContent = v;
+    function set(nv){
+      v = Math.max(min, Math.min(max, nv));
+      valEl.textContent = v;
+      minus.disabled = v <= min;
+      plus.disabled = v >= max;
+      onChange(v);
+    }
+    minus.addEventListener('click', () => set(v - 1));
+    plus.addEventListener('click', () => set(v + 1));
+    minus.disabled = v <= min;
+    plus.disabled = v >= max;
+    wrap.append(labelEl, minus, valEl, plus);
+    return wrap;
+  }
+  // The one table selected via lasso right now, if any — options row binds its controls
+  // directly to this stroke instead of the tool's global defaults when it's set.
+  function getSelectedTableStroke(){
+    if (tool !== 'lasso' || lassoSelection.length !== 1 || !lassoSelPageId) return null;
+    const page = activeNotebook && activeNotebook.pages[lassoSelPageId];
+    if (!page) return null;
+    const s = page.strokes[lassoSelection[0]];
+    return (s && s.tool === 'table' && !s.locked) ? s : null;
+  }
   function toolOptionsConfig(t){
     if (t === 'eraser')  return { eraserSizes:true, clearPage:true };
     if (t === 'laser')   return {};                                                     // fixed size/color, nothing to configure
@@ -3920,19 +4082,29 @@
   function renderToolOptionsRow(){
     const row = document.getElementById('toolOptionsRow');
     row.innerHTML = '';
-    const cfg = toolOptionsConfig(tool);
+    const selectedTable = getSelectedTableStroke();
+    const cfg = selectedTable
+      ? { color:true, width:true, widthLabel:'Line width', tableGrid:true }
+      : toolOptionsConfig(tool);
     if (cfg.color){
       // Always the last 6 colors actually used (most-recent first) — not a fixed palette.
       const recent = (data.settings.recentColors && data.settings.recentColors.length) ? data.settings.recentColors : DEFAULT_RECENT_COLORS;
+      const activeColor = selectedTable ? selectedTable.color : color;
       recent.slice(0, 6).forEach(c => {
         const sw = document.createElement('div');
-        sw.className = 'swatch' + (c.toLowerCase() === color.toLowerCase() ? ' active' : '');
+        sw.className = 'swatch' + (c.toLowerCase() === activeColor.toLowerCase() ? ' active' : '');
         sw.dataset.color = c;
         sw.style.background = c;
         sw.addEventListener('click', () => {
-          color = c;
-          data.settings.penColor = color;
-          pushRecentColor(color);
+          if (selectedTable){
+            selectedTable.color = c;
+            scheduleSave(); redrawPage(lassoSelPageId);
+            const pc = pageCanvases.get(lassoSelPageId); if (pc) drawLassoOverlay(pc);
+          } else {
+            color = c;
+            data.settings.penColor = color;
+            pushRecentColor(color);
+          }
           renderToolOptionsRow();
         });
         row.appendChild(sw);
@@ -3943,10 +4115,16 @@
       custom.title = 'Custom color';
       custom.style.background = 'conic-gradient(from 0deg, red, yellow, lime, cyan, blue, magenta, red)';
       custom.addEventListener('click', () => {
-        openColorPickerModal(color, (picked) => {
-          color = picked;
-          data.settings.penColor = color;
-          pushRecentColor(color);
+        openColorPickerModal(activeColor, (picked) => {
+          if (selectedTable){
+            selectedTable.color = picked;
+            scheduleSave(); redrawPage(lassoSelPageId);
+            const pc = pageCanvases.get(lassoSelPageId); if (pc) drawLassoOverlay(pc);
+          } else {
+            color = picked;
+            data.settings.penColor = color;
+            pushRecentColor(color);
+          }
           renderToolOptionsRow();
         });
       });
@@ -3996,42 +4174,39 @@
     }
     if (cfg.tableGrid){
       const wrapEl = document.createElement('div');
-      wrapEl.style.cssText = 'display:flex;align-items:center;gap:4px;flex-shrink:0;';
-      wrapEl.innerHTML = `
-        <span class="optLabel">Rows</span>
-        <input type="number" id="tableRowsInput" min="1" max="20" style="width:38px;font-size:12px;padding:3px;border:1px solid var(--paper-line);border-radius:6px;">
-        <span class="optLabel">Cols</span>
-        <input type="number" id="tableColsInput" min="1" max="20" style="width:38px;font-size:12px;padding:3px;border:1px solid var(--paper-line);border-radius:6px;">`;
+      wrapEl.style.cssText = 'display:flex;align-items:center;gap:10px;flex-shrink:0;';
+      if (selectedTable){
+        wrapEl.appendChild(createStepper('Rows', selectedTable.rows || 3, 1, 20, (v) => {
+          setTableRows(selectedTable, v);
+          scheduleSave(); redrawPage(lassoSelPageId);
+          const pc = pageCanvases.get(lassoSelPageId); if (pc) drawLassoOverlay(pc);
+        }));
+        wrapEl.appendChild(createStepper('Cols', selectedTable.cols || 3, 1, 20, (v) => {
+          setTableCols(selectedTable, v);
+          scheduleSave(); redrawPage(lassoSelPageId);
+          const pc = pageCanvases.get(lassoSelPageId); if (pc) drawLassoOverlay(pc);
+        }));
+      } else {
+        wrapEl.appendChild(createStepper('Rows', lastTableDims.rows, 1, 20, (v) => { lastTableDims = { ...lastTableDims, rows: v }; }));
+        wrapEl.appendChild(createStepper('Cols', lastTableDims.cols, 1, 20, (v) => { lastTableDims = { ...lastTableDims, cols: v }; }));
+      }
       row.appendChild(wrapEl);
-      const rowsInput = wrapEl.querySelector('#tableRowsInput');
-      const colsInput = wrapEl.querySelector('#tableColsInput');
-      rowsInput.value = lastTableDims.rows;
-      colsInput.value = lastTableDims.cols;
-      rowsInput.addEventListener('input', () => {
-        const n = parseInt(rowsInput.value, 10);
-        if (n > 0) lastTableDims = { ...lastTableDims, rows: n };
-      });
-      colsInput.addEventListener('input', () => {
-        const n = parseInt(colsInput.value, 10);
-        if (n > 0) lastTableDims = { ...lastTableDims, cols: n };
-      });
       const div2 = document.createElement('div'); div2.className = 'ediv'; row.appendChild(div2);
     }
     if (cfg.width){
-      const label = document.createElement('span');
-      label.className = 'optLabel';
-      label.textContent = cfg.widthLabel || 'Width';
-      row.appendChild(label);
-      const slider = document.createElement('input');
-      slider.type = 'range'; slider.id = 'widthSlider';
       const wCat = widthCategoryFor(tool);
-      slider.min = '1'; slider.max = '14'; slider.step = '0.5'; slider.value = String(toolWidths[wCat]);
-      slider.addEventListener('input', (e) => {
-        toolWidths[wCat] = parseFloat(e.target.value);
-        data.settings.toolWidths = toolWidths;
-        scheduleSave();
+      const rawWidth = selectedTable ? (selectedTable.width || 1.5) : toolWidths[wCat];
+      wrapWidthStepper(row, cfg.widthLabel || 'Width', rawWidth, (v) => {
+        if (selectedTable){
+          selectedTable.width = v;
+          scheduleSave(); redrawPage(lassoSelPageId);
+          const pc = pageCanvases.get(lassoSelPageId); if (pc) drawLassoOverlay(pc);
+        } else {
+          toolWidths[wCat] = v;
+          data.settings.toolWidths = toolWidths;
+          scheduleSave();
+        }
       });
-      row.appendChild(slider);
     }
     if (!cfg.color && !cfg.width && !cfg.eraserSizes){
       const note = document.createElement('span');
@@ -4059,6 +4234,11 @@
       row.appendChild(btn);
     }
   }
+  // Width is on a 1–10 scale everywhere now (was a free 1–14 slider) — clamp/round whatever
+  // is currently stored (old defaults like 2.5 or 6) down to that scale the first time it renders.
+  function wrapWidthStepper(row, label, rawValue, onChange){
+    row.appendChild(createStepper(label, Math.max(1, Math.min(10, rawValue)), 1, 10, onChange));
+  }
   renderToolOptionsRow();
 
   document.getElementById('undoBtn').addEventListener('click', () => {
@@ -4082,7 +4262,7 @@
   // ---- All pages modal ----
   const pagesModal = document.getElementById('pagesModal');
   const pagesGrid = document.getElementById('pagesGrid');
-  function openPagesModal(){ renderPagesGrid(); pagesModal.classList.remove('hidden'); }
+  function openPagesModal(){ pagesModal.classList.remove('hidden'); renderPagesGrid(); }
   document.getElementById('allPagesBtn').addEventListener('click', openPagesModal);
   document.getElementById('pagesModalClose').addEventListener('click', () => pagesModal.classList.add('hidden'));
   pagesModal.addEventListener('click', (e) => { if (e.target === pagesModal) pagesModal.classList.add('hidden'); });
