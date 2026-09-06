@@ -1969,10 +1969,14 @@
     renderPageStack();
     applyZoom();
     // frame exists now, so this can actually scroll to it — jump straight to the reopened
-    // (last-viewed) page rather than always resetting to the top of the stack.
+    // (last-viewed) page rather than always resetting to the top of the stack. Rect-based, not
+    // scrollIntoView, for the same reason as scrollToPage: the stage is transform:scale(zoom)'d.
     const openPc = pageCanvases.get(currentId);
-    if (openPc) openPc.frame.scrollIntoView({ block: 'start' });
-    else wrap.scrollTop = 0;
+    if (openPc){
+      const wrapRect = wrap.getBoundingClientRect();
+      const frameRect = openPc.frame.getBoundingClientRect();
+      wrap.scrollTop = wrap.scrollTop + (frameRect.top - wrapRect.top);
+    } else wrap.scrollTop = 0;
     clampScrollX(); clampScrollY();
     showStatusPill(); // brief show-then-fade so the page count is visible right on open too
     updateScrubPosition();
@@ -2741,9 +2745,17 @@
 
   function scrollToPage(id){
     const pc = pageCanvases.get(id);
-    if (pc) pc.frame.scrollIntoView({ behavior:'smooth', block:'start' });
+    if (pc){
+      // Same rect-based approach as clampScrollY, not scrollIntoView — scrollIntoView's own
+      // scroll-distance math doesn't account for the stage's transform:scale(zoom), since wrap's
+      // scrollHeight reflects the stage's unscaled layout size rather than its rendered size.
+      const wrapRect = wrap.getBoundingClientRect();
+      const frameRect = pc.frame.getBoundingClientRect();
+      wrap.scrollTop = wrap.scrollTop + (frameRect.top - wrapRect.top);
+    }
     currentId = id;
     updateActivePageUI();
+    clampScrollY();
   }
 
   let activePointerId = null;
@@ -4088,6 +4100,34 @@
     pagesGrid.appendChild(addTile);
   }
 
+  function reflowPageStack(){
+    // Re-order the actual page frames in the editor's scrollable stage to match
+    // activeNotebook.pageOrder — the pages-grid modal is a separate DOM tree from the real
+    // page stack, so without this, a reorder only shows up in the notebook itself after
+    // closing and reopening it (which is the only other place renderPageStack() runs).
+    activeNotebook.pageOrder.forEach(id => {
+      const pc = pageCanvases.get(id);
+      if (pc) stage.appendChild(pc.frame);
+    });
+    layoutFrameMargins();
+  }
+
+  function reflowPagesGridOrder(){
+    // Re-order the existing page-card elements to match activeNotebook.pageOrder, and refresh
+    // their position numbers — without recreating any node. A full renderPagesGrid() rebuild
+    // would tear down and recreate every card, which destroys the actively-dragged card's DOM
+    // identity (and the pointer capture set on it), cutting the drag short after one step.
+    activeNotebook.pageOrder.forEach((id, idx) => {
+      const el = pagesGrid.querySelector(`.pageCard[data-page-id="${id}"]`);
+      if (!el) return;
+      pagesGrid.appendChild(el); // re-appending an existing node just moves it — doesn't recreate it
+      const thumb = el.querySelector('.thumb');
+      if (thumb) thumb.textContent = idx+1;
+    });
+    const addTile = pagesGrid.querySelector('.addTile');
+    if (addTile) pagesGrid.appendChild(addTile); // keep the "+" tile pinned at the end
+  }
+
   function attachPageCardGesture(card, id){
     card.addEventListener('pointerdown', (e) => {
       if (e.target.closest('.pageDelete')) return; // let the delete button behave normally
@@ -4114,16 +4154,26 @@
         if (pageDrag && pageDrag.dragging){
           // Whichever card the pointer is currently over becomes the drop target — move the
           // dragged page there immediately so the grid re-flows live, like a normal reorder drag.
-          const target = document.elementFromPoint(ev.clientX, ev.clientY);
-          const targetCard = target && target.closest('.pageCard');
-          const targetId = targetCard && targetCard.dataset.pageId;
+          // Found via each card's own rendered rect rather than document.elementFromPoint: while
+          // this card has pointer capture, some browsers keep resolving elementFromPoint back to
+          // the capturing element itself no matter where the pointer actually is, which would
+          // stall the drag after a single step.
+          let targetId = null;
+          const cards = pagesGrid.querySelectorAll('.pageCard:not(.addTile)');
+          for (const el of cards){
+            const r = el.getBoundingClientRect();
+            if (ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom){
+              targetId = el.dataset.pageId;
+              break;
+            }
+          }
           if (targetId && targetId !== pageDrag.id){
             const order = activeNotebook.pageOrder;
             const from = order.indexOf(pageDrag.id), to = order.indexOf(targetId);
             if (from !== -1 && to !== -1){
               order.splice(from, 1);
               order.splice(to, 0, pageDrag.id);
-              renderPagesGrid();
+              reflowPagesGridOrder();
             }
           }
         }
@@ -4136,6 +4186,7 @@
         card.classList.remove('holding');
         if (pageDrag && pageDrag.dragging){
           pageDrag = null;
+          reflowPageStack();
           scheduleSave();
           renderPagesGrid();
           return;
