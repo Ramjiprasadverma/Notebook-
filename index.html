@@ -482,25 +482,25 @@
   .radioOption input { accent-color: var(--accent); width:15px; height:15px; }
   .lockNote { font-size:11px; color:#a39c86; margin-top:8px; line-height:1.4; }
   #pagesGrid { padding: 16px 18px; overflow-y:auto; display:grid; grid-template-columns: repeat(auto-fill, minmax(90px,1fr)); gap:12px; }
-  .pageCard { position:relative; cursor:pointer; touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
+  .pageCard { position:relative; cursor:pointer; touch-action:pan-y; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
   .pageCard .thumb {
-    background: var(--panel); border-radius:6px; aspect-ratio: 3/4;
-    display:flex; align-items:center; justify-content:center; font-size:20px; font-weight:700; color:#c9c2ac;
+    background: var(--panel); border-radius:6px; aspect-ratio: 3/4; overflow:hidden; position:relative;
     border: 2px solid transparent; box-shadow: 0 2px 8px var(--shadow);
   }
-  .pageCard.active .thumb { border-color: var(--cover-accent); color: var(--cover-accent); }
-  .pageCard .label { font-size:11px; text-align:center; margin-top:4px; color:#8a8474; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .pageCard .thumb .thumbInk { display:block; width:100%; height:100%; }
+  .pageCard.active .thumb { border-color: var(--cover-accent); }
+  .pageCard .cardFooter { display:flex; align-items:center; justify-content:center; gap:6px; margin-top:4px; }
+  .pageCard .pageNum { font-size:11px; color:#8a8474; }
+  .pageCard.active .pageNum { color: var(--cover-accent); font-weight:700; }
   .pageCard .pageDelete {
-    position:absolute; top:-6px; right:-6px; width:20px; height:20px; border-radius:999px;
-    border:none; background:var(--panel); color:#8a8474; font-size:11px; cursor:pointer;
-    display:flex; align-items:center; justify-content:center; opacity:0; transition: opacity 0.15s ease;
-    box-shadow: 0 2px 6px var(--shadow);
+    width:18px; height:18px; border-radius:999px; flex-shrink:0;
+    border:none; background:transparent; color:#8a8474; font-size:11px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
   }
-  .pageCard:hover .pageDelete { opacity:1; }
-  .pageCard .pageDelete:hover { color: var(--danger); }
-  .pageCard.addTile .thumb { border: 2px dashed var(--paper-line); color:#a39c86; font-size:24px; box-shadow:none; background:transparent; }
+  .pageCard .pageDelete:hover { color: var(--danger); background: var(--panel); }
+  .pageCard.addTile .thumb { display:flex; align-items:center; justify-content:center; border: 2px dashed var(--paper-line); color:#a39c86; font-size:24px; box-shadow:none; background:transparent; }
   .pageCard.addTile:hover .thumb { border-color: var(--accent); color: var(--accent); }
-  /* After a ~3s hold, a card becomes freely draggable to reorder pages. */
+  /* After a brief hold, a card becomes freely draggable to reorder pages. */
   .pageCard.dragging { z-index:5; opacity:0.92; }
   .pageCard.dragging .thumb { transform: scale(1.08); box-shadow: 0 12px 26px rgba(0,0,0,0.3); border-color: var(--accent); }
   .pageCard.holding .thumb { transition: box-shadow 0.2s ease; box-shadow: 0 0 0 2px var(--accent); }
@@ -683,6 +683,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
     </button>
     <div class="tabLabel">Home</div>
+    <button class="tabBtn" id="notesTabBtn" title="Notes">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><path d="M9 13h6M9 17h6"/></svg>
+    </button>
+    <div class="tabLabel">Notes</div>
     <button class="tabBtn" id="trashTabBtn" title="Recently Deleted">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
     </button>
@@ -1209,8 +1213,10 @@
 
   // ---- Tab switching ----
   const homeTabBtn = document.getElementById('homeTabBtn');
+  const notesTabBtn = document.getElementById('notesTabBtn');
   const trashTabBtn = document.getElementById('trashTabBtn');
   homeTabBtn.addEventListener('click', () => { nav = {tab:'home', folderId:null, notebookId:null}; showBrowser(); });
+  notesTabBtn.addEventListener('click', () => { nav = {tab:'notes', folderId:null, notebookId:null}; showBrowser(); });
   trashTabBtn.addEventListener('click', () => { nav.tab = 'trash'; nav.folderId=null; nav.notebookId=null; showBrowser(); });
 
   function showBrowser(){
@@ -1218,6 +1224,7 @@
     document.getElementById('browserView').classList.remove('hidden');
     document.getElementById('tabRail').classList.remove('hidden');
     homeTabBtn.classList.toggle('active', nav.tab === 'home');
+    notesTabBtn.classList.toggle('active', nav.tab === 'notes');
     trashTabBtn.classList.toggle('active', nav.tab === 'trash');
     renderBrowser();
   }
@@ -1230,6 +1237,13 @@
       const c = document.createElement('span');
       c.className = 'crumb current';
       c.textContent = 'Recently Deleted';
+      bc.appendChild(c);
+      return;
+    }
+    if (nav.tab === 'notes'){
+      const c = document.createElement('span');
+      c.className = 'crumb current';
+      c.textContent = 'Notes';
       bc.appendChild(c);
       return;
     }
@@ -1275,6 +1289,16 @@
       subtitle.textContent = data.trash.length ? 'Restore, or remove for good.' : '';
       renderTrash();
       empty.classList.toggle('hidden', data.trash.length !== 0);
+      fab.classList.add('hidden');
+      return;
+    }
+    if (nav.tab === 'notes'){
+      trashList.classList.add('hidden');
+      grid.classList.remove('hidden');
+      title.textContent = 'Notes';
+      subtitle.textContent = 'Every notebook, most recently edited first';
+      renderNotesGrid();
+      empty.classList.toggle('hidden', Object.keys(data.notebooks).length !== 0);
       fab.classList.add('hidden');
       return;
     }
@@ -1374,6 +1398,17 @@
       openCardMenu(e.currentTarget, 'notebook', id, nameEl);
     });
     return card;
+  }
+
+  function renderNotesGrid(){
+    const grid = document.getElementById('grid');
+    grid.innerHTML = '';
+    const ids = Object.keys(data.notebooks).sort((a, b) =>
+      (data.notebooks[b].modifiedAt || 0) - (data.notebooks[a].modifiedAt || 0));
+    ids.forEach((id, idx) => {
+      const nb = data.notebooks[id];
+      if (nb) grid.appendChild(createNotebookCardEl(id, nb, idx));
+    });
   }
 
   function renderHomeGrid(){
@@ -1515,11 +1550,12 @@
   function deleteNotebook(id){
     const nb = data.notebooks[id];
     if (!nb) return;
-    const folder = nav.folderId ? data.folders[nav.folderId] : null;
+    const ownerFolderId = nb.folderId || null;
+    const folder = ownerFolderId ? data.folders[ownerFolderId] : null;
     data.trash.push({
       trashId: uid(), type:'notebook', deletedAt: Date.now(),
-      data: nb, folderId: nav.folderId || null, folderName: folder ? folder.name : null,
-      wasRoot: !nav.folderId
+      data: nb, folderId: ownerFolderId, folderName: folder ? folder.name : null,
+      wasRoot: !ownerFolderId
     });
     delete data.notebooks[id];
     if (folder) folder.notebookIds = folder.notebookIds.filter(n => n !== id);
@@ -2652,11 +2688,7 @@
   // so we use that to treat it as a pen even when the browser mislabels it — this is
   // what keeps the stylus working when "single finger: ignored" is selected.
   function isStylusLike(e){
-    if (e.pointerType === 'pen') return true;
-    if (e.pointerType === 'touch' && e.width && e.height){
-      return Math.max(e.width, e.height) < 12;
-    }
-    return false;
+    return e.pointerType === 'pen';
   }
 
   function createPageFrame(pageId){
@@ -4062,17 +4094,78 @@
   const PAGE_TAP_MAX_PX = 60;       // beyond this on release, treat it as a deliberate scroll/swipe, not a tap
   let pageDrag = null; // { id, dragging } while an active hold/drag gesture is in progress
 
+  function applyThumbBackground(thumbEl, page){
+    applyFrameBackground(thumbEl, page);
+    if (page.bg) return; // imported PDF/image page — no paper pattern to scale
+    // applyFrameBackground sizes the pattern for a full-size page; scale it down to the
+    // thumbnail's actual rendered width so it reads as a miniature, not a dense blur of lines.
+    const pageSize = pageSizeFor(page, activeNotebook);
+    const scale = (thumbEl.clientWidth && pageSize.width) ? (thumbEl.clientWidth / pageSize.width) : 0.12;
+    const eff = getEffectiveTemplateFor(page);
+    const spacing = Math.max(1, (eff.spacing || 36) * scale);
+    const bg = eff.bgColor || '#f6f3ec';
+    if (eff.template === 'grid' || eff.template === 'dot'){
+      thumbEl.style.backgroundSize = `${spacing}px ${spacing}px`;
+    } else if (eff.template !== 'blank'){
+      thumbEl.style.backgroundImage = `repeating-linear-gradient(${bg}, ${bg} ${spacing-1}px, var(--paper-line) ${spacing}px)`;
+    }
+  }
+
+  function renderThumbBackground(id){
+    const card = pagesGrid.querySelector(`.pageCard[data-page-id="${id}"]`);
+    const page = activeNotebook.pages[id];
+    if (!card || !page) return;
+    const thumbEl = card.querySelector('.thumb');
+    if (thumbEl) applyThumbBackground(thumbEl, page); // now that it's laid out, clientWidth is meaningful
+  }
+
+  function renderThumbInk(id){
+    const card = pagesGrid.querySelector(`.pageCard[data-page-id="${id}"]`);
+    const pc = pageCanvases.get(id);
+    if (!card || !pc) return;
+    const ink = card.querySelector('.thumbInk');
+    if (!ink) return;
+    const rect = ink.getBoundingClientRect();
+    const w = Math.max(1, Math.round(rect.width)), h = Math.max(1, Math.round(rect.height));
+    const thumbDpr = Math.min(dpr, 1.5); // a small preview doesn't need full device resolution
+    const cw = Math.round(w*thumbDpr), ch = Math.round(h*thumbDpr);
+    if (ink.width !== cw) ink.width = cw;
+    if (ink.height !== ch) ink.height = ch;
+    const ictx = ink.getContext('2d');
+    ictx.clearRect(0,0,cw,ch);
+    const sw = pc.canvas.width, sh = pc.canvas.height;
+    if (sw && sh){
+      ictx.drawImage(pc.bgCanvas, 0,0,sw,sh, 0,0,cw,ch); // imported PDF/image, if any
+      ictx.drawImage(pc.canvas, 0,0,sw,sh, 0,0,cw,ch);    // actual ink
+    }
+  }
+
+  // Draws the (more expensive) ink previews a few pages at a time across animation frames,
+  // rather than every page at once — that was what made opening a big notebook feel slow.
+  let thumbRenderToken = 0;
+  function scheduleThumbInkRender(ids){
+    const myToken = ++thumbRenderToken; // a newer call (grid rebuilt again) cancels this one
+    let i = 0;
+    const BATCH = 4;
+    function step(){
+      if (myToken !== thumbRenderToken) return; // superseded by a newer renderPagesGrid()
+      const end = Math.min(i + BATCH, ids.length);
+      for (; i < end; i++) renderThumbInk(ids[i]);
+      if (i < ids.length) requestAnimationFrame(step);
+    }
+    step();
+  }
+
   function renderPagesGrid(){
     pagesGrid.innerHTML = '';
     activeNotebook.pageOrder.forEach((id, idx) => {
       const card = document.createElement('div');
       card.className = 'pageCard' + (id === currentId ? ' active' : '');
       card.dataset.pageId = id;
-      card.innerHTML = `<div class="thumb">${idx+1}</div><div class="label"></div>`;
-      card.querySelector('.label').textContent = activeNotebook.pages[id].title;
+      card.innerHTML = `<div class="thumb"><canvas class="thumbInk"></canvas></div><div class="cardFooter"><span class="pageNum">${idx+1}</span></div>`;
       if (activeNotebook.pageOrder.length > 1){
         const del = document.createElement('button');
-        del.className = 'pageDelete'; del.textContent = '✕';
+        del.className = 'pageDelete'; del.textContent = '✕'; del.title = 'Delete page';
         del.addEventListener('click', (e) => {
           e.stopPropagation();
           const idx2 = activeNotebook.pageOrder.indexOf(id);
@@ -4084,7 +4177,7 @@
           renderPagesGrid();
           scheduleSave();
         });
-        card.appendChild(del);
+        card.querySelector('.cardFooter').appendChild(del);
       }
       attachPageCardGesture(card, id);
       pagesGrid.appendChild(card);
@@ -4095,9 +4188,13 @@
     }
     const addTile = document.createElement('div');
     addTile.className = 'pageCard addTile';
-    addTile.innerHTML = `<div class="thumb">+</div><div class="label">New page</div>`;
+    addTile.innerHTML = `<div class="thumb">+</div><div class="cardFooter"><span class="pageNum">New page</span></div>`;
     addTile.addEventListener('click', () => { addNewPage(); renderPagesGrid(); });
     pagesGrid.appendChild(addTile);
+    // Every card now has its final layout size. Backgrounds are cheap — set them all now;
+    // ink previews are the expensive part, so those are batched across frames.
+    activeNotebook.pageOrder.forEach(id => renderThumbBackground(id));
+    scheduleThumbInkRender(activeNotebook.pageOrder.slice());
   }
 
   function reflowPageStack(){
@@ -4121,8 +4218,8 @@
       const el = pagesGrid.querySelector(`.pageCard[data-page-id="${id}"]`);
       if (!el) return;
       pagesGrid.appendChild(el); // re-appending an existing node just moves it — doesn't recreate it
-      const thumb = el.querySelector('.thumb');
-      if (thumb) thumb.textContent = idx+1;
+      const num = el.querySelector('.pageNum');
+      if (num) num.textContent = idx+1;
     });
     const addTile = pagesGrid.querySelector('.addTile');
     if (addTile) pagesGrid.appendChild(addTile); // keep the "+" tile pinned at the end
@@ -4178,7 +4275,7 @@
           }
         }
       }
-      function onUp(){
+      function onUp(ev){
         clearTimeout(holdTimer);
         document.removeEventListener('pointermove', onMove);
         document.removeEventListener('pointerup', onUp);
@@ -4192,6 +4289,7 @@
           return;
         }
         pageDrag = null;
+        if (ev.type === 'pointercancel') return; // gesture handed off (e.g. to native scroll) — not a tap
         if (maxDist <= PAGE_TAP_MAX_PX){
           // Released before the hold turned into a drag, and didn't travel far enough to be a
           // deliberate scroll/swipe (some jitter is normal on touch/stylus) — treat as a tap.
